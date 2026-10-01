@@ -1,0 +1,179 @@
+name: differential
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: differential-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LAPACK_REF: v3.12.1
+  SLATEC_REF: c4cfb44c9d122e3478731f07343abf76e9d93339
+  SLATEC_SRC_URL: https://www.netlib.org/slatec/slatec_src.tgz
+  SLATEC_SRC_MD5: 027dac0af67f76dd3192b9effc1b55c1
+
+jobs:
+  agree:
+    name: compared against the reference Fortran
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out Reeve
+        uses: actions/checkout@v4
+
+      - name: Install gfortran and cmake
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake
+          gfortran --version | head -1
+
+      - name: Cache the reference BLAS and LAPACK
+        id: lapack-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ref/lapack
+          key: lapack-${{ env.LAPACK_REF }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Fetch and build the reference BLAS and LAPACK
+        if: steps.lapack-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          src=$RUNNER_TEMP/lapack-src
+          git clone --quiet --depth 1 --branch "$LAPACK_REF" \
+            https://github.com/Reference-LAPACK/lapack.git "$src"
+          echo "Reference-LAPACK $LAPACK_REF is $(git -C "$src" rev-parse HEAD)"
+          cmake -S "$src" -B "$RUNNER_TEMP/lapack-build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_SINGLE=OFF \
+            -DBUILD_COMPLEX=OFF \
+            -DBUILD_COMPLEX16=OFF \
+            -DBUILD_DOUBLE=ON
+          cmake --build "$RUNNER_TEMP/lapack-build" -j "$(nproc)"
+          mkdir -p "$HOME/ref/lapack/lib"
+          cp "$RUNNER_TEMP/lapack-build/lib/libblas.a" \
+             "$RUNNER_TEMP/lapack-build/lib/liblapack.a" \
+             "$HOME/ref/lapack/lib/"
+
+      - name: The reference BLAS and LAPACK are in place
+        run: |
+          set -euo pipefail
+          ls -l "$HOME/ref/lapack/lib/libblas.a" "$HOME/ref/lapack/lib/liblapack.a"
+
+      - name: Fetch the modernised SLATEC
+        run: |
+          set -euo pipefail
+          tree=$HOME/ref/slatec-modern
+          git clone --quiet https://github.com/Zaneham/SLATEC.git "$tree"
+          git -C "$tree" checkout --quiet "$SLATEC_REF"
+          echo "Zaneham/SLATEC at $(git -C "$tree" rev-parse HEAD)"
+          ls "$tree/src/modern/special_functions" | wc -l
+
+      - name: Fetch the original SLATEC from netlib
+        run: |
+          set -euo pipefail
+          tgz=$RUNNER_TEMP/slatec_src.tgz
+          if ! curl -fsSL -o "$tgz" "$SLATEC_SRC_URL"; then
+            echo "netlib did not answer, taking the same drop out of Zaneham/SLATEC"
+            cp "$HOME/ref/slatec-modern/src/original/slatec_src.tgz" "$tgz"
+          fi
+          got=$(md5sum "$tgz" | cut -d' ' -f1)
+          echo "slatec_src.tgz md5 $got"
+          if [ "$got" != "$SLATEC_SRC_MD5" ]; then
+            echo "that is not the SLATEC drop this differential is pinned to, $SLATEC_SRC_MD5"
+            exit 1
+          fi
+          mkdir -p "$HOME/ref/slatec"
+          tar xzf "$tgz" -C "$HOME/ref/slatec"
+          ls "$HOME/ref/slatec/src"/*.f | wc -l
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          opam install . --deps-only --yes
+          opam install ocamlfind --yes
+
+      - name: Build and stage Reeve
+        run: |
+          set -euo pipefail
+          opam exec -- dune build @install
+          opam exec -- dune install --prefix "$RUNNER_TEMP/reeve"
+          ls -l "$RUNNER_TEMP/reeve/lib/reeve/reeve.cmxa"
+
+      - name: BLAS and LAPACK
+        run: |
+          set -euo pipefail
+          export OCAMLPATH=$RUNNER_TEMP/reeve/lib
+          export OPAMSWITCH="$GITHUB_WORKSPACE"
+          d=$RUNNER_TEMP/dx/lapack
+          mkdir -p "$d"
+          cd "$d"
+          cp "$GITHUB_WORKSPACE/diff/lapack/fdiff.f90" .
+          cp "$GITHUB_WORKSPACE/diff/lapack/driver.ml" .
+          gfortran -O2 -o fdiff fdiff.f90 -L"$HOME/ref/lapack/lib" -llapack -lblas
+          opam exec -- ocamlfind ocamlopt -package reeve -linkpkg -open Reeve \
+            driver.ml -o driver
+          ./fdiff > fortran.out
+          ./driver > reeve.out
+          bash "$GITHUB_WORKSPACE/.github/scripts/agree.sh" \
+            "blas and lapack" fortran.out reeve.out 1400000
+
+      - name: Sorting
+        run: |
+          set -euo pipefail
+          export OCAMLPATH=$RUNNER_TEMP/reeve/lib
+          export OPAMSWITCH="$GITHUB_WORKSPACE"
+          s=$HOME/ref/slatec/src
+          d=$RUNNER_TEMP/dx/sort
+          mkdir -p "$d"
+          cd "$d"
+          cp "$GITHUB_WORKSPACE/diff/sort/drv.f90" .
+          cp "$GITHUB_WORKSPACE/diff/sort/odrv.ml" .
+          cp "$GITHUB_WORKSPACE/diff/expint/xm.f" .
+          gfortran -O2 -std=legacy -o fdrv drv.f90 \
+            "$s/dsort.f" "$s/dpsort.f" "$s/dpperm.f" "$s/d1merg.f" xm.f \
+            -L"$HOME/ref/lapack/lib" -lblas
+          opam exec -- ocamlfind ocamlopt -package reeve -linkpkg -open Reeve \
+            odrv.ml -o odrv
+          ./fdrv > fortran.out
+          ./odrv > reeve.out
+          bash "$GITHUB_WORKSPACE/.github/scripts/agree.sh" \
+            sorting fortran.out reeve.out 400000
+
+      - name: Exponential integrals
+        run: |
+          set -euo pipefail
+          export OCAMLPATH=$RUNNER_TEMP/reeve/lib
+          export OPAMSWITCH="$GITHUB_WORKSPACE"
+          inc=$HOME/ref/slatec-modern/src/modern/special_functions
+          d=$RUNNER_TEMP/dx/expint
+          mkdir -p "$d"
+          cd "$d"
+          cp "$GITHUB_WORKSPACE"/diff/expint/svc.f90 .
+          cp "$GITHUB_WORKSPACE"/diff/expint/mach.f90 .
+          cp "$GITHUB_WORKSPACE"/diff/expint/drv2.f90 .
+          cp "$GITHUB_WORKSPACE"/diff/expint/dexint_orig.f .
+          cp "$GITHUB_WORKSPACE"/diff/expint/xm.f .
+          cp "$GITHUB_WORKSPACE"/diff/expint/sweep.ml .
+          gfortran -O2 -I"$inc" -c svc.f90
+          gfortran -O2 -std=legacy -I"$inc" -o drv2 \
+            svc.o mach.f90 drv2.f90 dexint_orig.f xm.f \
+            "$HOME/ref/slatec/src/dpsixn.f"
+          opam exec -- ocamlfind ocamlopt -package reeve -linkpkg -open Reeve \
+            sweep.ml -o sweep
+          ./sweep
+          ./drv2 < sweep.in > fortran.out
+          bash "$GITHUB_WORKSPACE/.github/scripts/agree.sh" \
+            "exponential integrals" fortran.out ml.out 2800

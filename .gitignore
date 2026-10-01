@@ -1,0 +1,21 @@
+_build/
+*.install
+USING.md
+
+# differential build artefacts and sweep data, all regenerable
+diff/**/*.o
+diff/**/*.mod
+diff/**/*.exe
+diff/**/*.out
+diff/**/*.err
+diff/**/*.cm[iox]
+diff/**/*.hex
+diff/**/fdiff
+diff/**/upak.*
+diff/**/build/
+camlprog.exe
+diff/**/work/
+
+# I'll release these at a later date, I want to write up an "extended tour" of sorts
+CLAUDE.md
+AGENTS.md

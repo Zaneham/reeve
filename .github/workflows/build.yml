@@ -1,0 +1,62 @@
+name: build
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ocaml ${{ matrix.ocaml-compiler }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        ocaml-compiler:
+          - "4.14"
+          - "5"
+
+    steps:
+      - name: Check out Reeve
+        uses: actions/checkout@v4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+
+      - name: Install dependencies
+        run: opam install . --deps-only --with-test --yes
+
+      - name: Build
+        run: opam exec -- dune build
+
+      - name: Run the suites
+        run: |
+          set -euo pipefail
+          opam exec -- dune test --force 2>&1 | tee "$RUNNER_TEMP/runtest.log"
+
+      - name: Every suite reported a pass
+        run: |
+          set -euo pipefail
+          log=$RUNNER_TEMP/runtest.log
+          bad=0
+          for s in blas blasmat lapack laux linpack specfun bessel gamma \
+                   expint xlegf quad interp sort; do
+            if ! grep -qx "$s: all checks passed" "$log"; then
+              echo "no pass line from the $s suite"
+              bad=1
+            fi
+          done
+          if grep -q '^FAIL ' "$log"; then
+            echo "a suite printed FAIL:"
+            grep '^FAIL ' "$log"
+            bad=1
+          fi
+          test "$bad" -eq 0
