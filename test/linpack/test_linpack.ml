@@ -3,7 +3,10 @@
    matrices, right hand sides and tolerances taken from the slatec-modern
    Fortran suites. *)
 
-open Reeve.Linpack
+open Reeve.Linpack.Raw
+
+module L = Reeve.Linpack
+module M = Reeve.Mat
 
 let tol = 1.0e-10
 let bad = ref 0
@@ -578,6 +581,135 @@ let l3_geco_pascal () =
   let ipvt = Array.make 3 0 and z = Array.make 3 0.0 in
   check "l3 dgeco pascal" (dgeco a 3 3 ipvt z > 0.01)
 
+let raises what f =
+  if not (try f (); false with Invalid_argument _ -> true) then fail what
+
+let raises_singular what f =
+  if not (try f (); false with L.Singular _ -> true) then fail what
+
+let raises_indefinite what f =
+  if not (try f (); false with L.Not_positive_definite _ -> true) then
+    fail what
+
+let s_solve () =
+  let a = M.of_array 3 3 (mat [| [| 2.0; 1.0; 0.0 |]; [| 1.0; 3.0; 1.0 |]; [| 0.0; 1.0; 2.0 |] |]) in
+  let b = M.of_array 3 2 [| 4.0; 10.0; 8.0; 3.0; 5.0; 3.0 |] in
+  L.solve a b;
+  same "s solve two right hand sides" (M.data b)
+    [| 1.0; 2.0; 3.0; 1.0; 1.0; 1.0 |]
+
+let s_lu_solve () =
+  let a = M.of_array 3 3 (mat [| [| 2.0; 1.0; 1.0 |]; [| 4.0; -6.0; 0.0 |]; [| -2.0; 7.0; 2.0 |] |]) in
+  let ipvt = L.lu a in
+  let b = M.of_vec [| 7.0; -8.0; 18.0 |] in
+  L.lu_solve a ipvt b;
+  same "s lu_solve forward" (M.data b) [| 1.0; 2.0; 3.0 |];
+  let c = M.of_vec [| 4.0; 10.0; 7.0 |] in
+  L.lu_solve ~trans:true a ipvt c;
+  same "s lu_solve transposed" (M.data c) [| 1.0; 2.0; 3.0 |]
+
+let s_lu_rcond () =
+  let raw = mat (Array.init 3 (fun i -> Array.init 3 (fun j -> 1.0 /. float_of_int (i + j + 1)))) in
+  let a = M.of_array 3 3 (Array.copy raw) in
+  let ipvt = Array.make 3 0 in
+  let z = Array.make 3 0.0 in
+  let r0 = dgeco raw 3 3 ipvt z in
+  let got, r1 = L.lu_rcond a in
+  near "s lu_rcond estimate" r1 r0;
+  same "s lu_rcond factors" (M.data a) raw;
+  check "s lu_rcond pivots" (got = ipvt);
+  let b = M.of_vec (Array.init 3 (fun i -> (1.0 /. float_of_int (i + 1)) +. (1.0 /. float_of_int (i + 2)) +. (1.0 /. float_of_int (i + 3)))) in
+  L.lu_solve a got b;
+  same_t 1.0e-8 "s lu_rcond then solve" (M.data b) (ones 3);
+  let singular = M.of_array 2 2 (mat [| [| 1.0; 2.0 |]; [| 2.0; 4.0 |] |]) in
+  let _, rs = L.lu_rcond singular in
+  check "s lu_rcond singular is not an exception" (rs >= 0.0 && rs < 1.0e-14)
+
+let s_band_solve () =
+  let abd = M.of_array 4 5 (tridiag_band 5 1 1 4.0 (-1.0)) in
+  let b = M.of_array 5 2 [| 3.0; 2.0; 2.0; 2.0; 3.0; 2.0; 4.0; 6.0; 8.0; 16.0 |] in
+  L.band_solve ~ml:1 ~mu:1 abd b;
+  same "s band_solve two right hand sides" (M.data b)
+    [| 1.0; 1.0; 1.0; 1.0; 1.0; 1.0; 2.0; 3.0; 4.0; 5.0 |]
+
+let s_band_lu_solve () =
+  let abd = M.of_array 4 5 (tridiag_band 5 1 1 4.0 (-1.0)) in
+  let raw = tridiag_band 5 1 1 4.0 (-1.0) in
+  let ipvt = Array.make 5 0 in
+  info_is "s band raw info" (dgbfa raw 4 5 1 1 ipvt) 0;
+  let got = L.band_lu ~ml:1 ~mu:1 abd in
+  same "s band_lu factors" (M.data abd) raw;
+  check "s band_lu pivots" (got = ipvt);
+  let b = M.of_vec [| 3.0; 2.0; 2.0; 2.0; 3.0 |] in
+  L.band_lu_solve ~ml:1 ~mu:1 abd got b;
+  same "s band_lu_solve forward" (M.data b) (ones 5);
+  let c = M.of_vec [| 3.0; 2.0; 2.0; 2.0; 3.0 |] in
+  L.band_lu_solve ~trans:true ~ml:1 ~mu:1 abd got c;
+  same "s band_lu_solve transposed" (M.data c) (ones 5)
+
+let s_cholesky () =
+  let rows = [| [| 4.0; 2.0; 0.0 |]; [| 2.0; 5.0; 1.0 |]; [| 0.0; 1.0; 3.0 |] |] in
+  let a = M.of_array 3 3 (mat rows) in
+  let b = M.of_array 3 2 [| 6.0; 8.0; 4.0; 4.0; 2.0; 0.0 |] in
+  L.solve_spd a b;
+  same "s solve_spd two right hand sides" (M.data b)
+    [| 1.0; 1.0; 1.0; 1.0; 0.0; 0.0 |];
+  let f = M.of_array 3 3 (mat rows) in
+  L.cholesky f;
+  let c = M.of_vec [| 6.0; 8.0; 4.0 |] in
+  L.cholesky_solve f c;
+  same "s cholesky_solve" (M.data c) (ones 3)
+
+let s_band_cholesky () =
+  let abd = M.of_array 2 5 (spd_band 5 1 4.0 (-1.0)) in
+  let b = M.of_vec [| 3.0; 2.0; 2.0; 2.0; 3.0 |] in
+  L.band_solve_spd ~mu:1 abd b;
+  same "s band_solve_spd" (M.data b) (ones 5);
+  let f = M.of_array 2 5 (spd_band 5 1 4.0 (-1.0)) in
+  L.band_cholesky ~mu:1 f;
+  let c = M.of_vec [| 3.0; 2.0; 2.0; 2.0; 3.0 |] in
+  L.band_cholesky_solve ~mu:1 f c;
+  same "s band_cholesky_solve" (M.data c) (ones 5)
+
+let s_exceptions () =
+  raises_singular "s solve singular" (fun () ->
+      L.solve
+        (M.of_array 2 2 (mat [| [| 1.0; 2.0 |]; [| 2.0; 4.0 |] |]))
+        (M.of_vec [| 1.0; 2.0 |]));
+  raises_singular "s lu singular" (fun () ->
+      ignore (L.lu (M.of_array 2 2 (mat [| [| 1.0; 2.0 |]; [| 2.0; 4.0 |] |]))));
+  raises_singular "s band_lu singular" (fun () ->
+      ignore (L.band_lu ~ml:1 ~mu:1 (M.create 4 3)));
+  raises_indefinite "s cholesky not definite" (fun () ->
+      L.cholesky (M.of_array 2 2 (mat [| [| 1.0; 2.0 |]; [| 2.0; 1.0 |] |])));
+  raises_indefinite "s solve_spd not definite" (fun () ->
+      L.solve_spd
+        (M.of_array 2 2 (mat [| [| 1.0; 2.0 |]; [| 2.0; 1.0 |] |]))
+        (M.of_vec [| 1.0; 1.0 |]));
+  raises_indefinite "s band_cholesky not definite" (fun () ->
+      L.band_cholesky ~mu:1 (M.create 2 3))
+
+let s_conformance () =
+  raises "s solve not square" (fun () ->
+      L.solve (M.create 2 3) (M.of_vec [| 1.0; 2.0 |]));
+  raises "s solve rhs rows" (fun () ->
+      L.solve (M.create 2 2) (M.of_vec [| 1.0; 2.0; 3.0 |]));
+  raises "s cholesky not square" (fun () -> L.cholesky (M.create 2 3));
+  raises "s lu_solve short pivots" (fun () ->
+      L.lu_solve (M.create 2 2) [| 0 |] (M.of_vec [| 1.0; 2.0 |]));
+  raises "s lu_solve pivot out of range" (fun () ->
+      L.lu_solve (M.create 2 2) [| 0; 5 |] (M.of_vec [| 1.0; 2.0 |]));
+  raises "s band_lu negative bandwidth" (fun () ->
+      ignore (L.band_lu ~ml:(-1) ~mu:1 (M.create 4 5)));
+  raises "s band_lu too few rows" (fun () ->
+      ignore (L.band_lu ~ml:1 ~mu:1 (M.create 3 5)));
+  raises "s band_lu bandwidth too wide" (fun () ->
+      ignore (L.band_lu ~ml:0 ~mu:3 (M.create 4 3)));
+  raises "s band_solve rhs rows" (fun () ->
+      L.band_solve ~ml:1 ~mu:1 (M.create 4 5) (M.of_vec [| 1.0; 2.0 |]));
+  raises "s band_cholesky too few rows" (fun () ->
+      L.band_cholesky ~mu:1 (M.create 1 5))
+
 let () =
   l1_ge_2x2 ();
   l1_ge_identity ();
@@ -626,4 +758,13 @@ let () =
   l3_geco_vandermonde ();
   l3_geco_moler ();
   l3_geco_pascal ();
+  s_solve ();
+  s_lu_solve ();
+  s_lu_rcond ();
+  s_band_solve ();
+  s_band_lu_solve ();
+  s_cholesky ();
+  s_band_cholesky ();
+  s_exceptions ();
+  s_conformance ();
   if !bad = 0 then print_string "linpack: all checks passed\n" else exit 1

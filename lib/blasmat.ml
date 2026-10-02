@@ -1,7 +1,9 @@
 (* Reeve, Copyright 2026 Zane Hambly.
    BLAS level 2 and level 3 for dense matrices, ported from the reference
    Fortran. Matrices are column major with an explicit base offset and leading
-   dimension, so the element (i, j) zero based lives at ao + i + j * lda. *)
+   dimension, so the element (i, j) zero based lives at ao + i + j * lda.
+   Those shapes are also re-exported as Raw, with an OCaml surface over Mat.t
+   under it. *)
 
 type trans = No_trans | Trans | Conj_trans
 type uplo = Upper | Lower
@@ -521,3 +523,68 @@ let dtrmm side uplo transa diag m n alpha a ao lda b bo ldb =
           done
       done
   end
+
+module Raw = struct
+  let dgemv = dgemv
+  let dger = dger
+  let dgemm = dgemm
+  let dsyrk = dsyrk
+  let dtrsm = dtrsm
+  let dtrmm = dtrmm
+end
+
+(* ---- The OCaml surface ---- *)
+
+let need name ok msg = if not ok then invalid_arg (name ^ ": " ^ msg)
+let ld m = max 1 (Mat.rows m)
+
+let shape t m =
+  if is_notrans t then (Mat.rows m, Mat.cols m) else (Mat.cols m, Mat.rows m)
+
+let gemm ?(transa = No_trans) ?(transb = No_trans) ?(alpha = 1.0)
+    ?(beta = 0.0) a b c =
+  let ar, ac = shape transa a and br, bc = shape transb b in
+  need "Blasmat.gemm" (ac = br) "a and b disagree on the inner dimension";
+  need "Blasmat.gemm" (ar = Mat.rows c) "a and c disagree on the rows";
+  need "Blasmat.gemm" (bc = Mat.cols c) "b and c disagree on the columns";
+  dgemm transa transb (Mat.rows c) (Mat.cols c) ac alpha (Mat.data a) 0 (ld a)
+    (Mat.data b) 0 (ld b) beta (Mat.data c) 0 (ld c)
+
+let gemv ?(trans = No_trans) ?(alpha = 1.0) ?(beta = 0.0) a x y =
+  let m = Mat.rows a and n = Mat.cols a in
+  let lenx = if is_notrans trans then n else m in
+  let leny = if is_notrans trans then m else n in
+  need "Blasmat.gemv" (Array.length x = lenx) "x is the wrong length for a";
+  need "Blasmat.gemv" (Array.length y = leny) "y is the wrong length for a";
+  dgemv trans m n alpha (Mat.data a) 0 (ld a) x 0 1 beta y 0 1
+
+let ger ?(alpha = 1.0) x y a =
+  need "Blasmat.ger"
+    (Array.length x = Mat.rows a) "x isn't as long as a has rows";
+  need "Blasmat.ger"
+    (Array.length y = Mat.cols a) "y isn't as long as a has columns";
+  dger (Mat.rows a) (Mat.cols a) alpha x 0 1 y 0 1 (Mat.data a) 0 (ld a)
+
+let syrk ?(uplo = Upper) ?(trans = No_trans) ?(alpha = 1.0) ?(beta = 0.0) a c =
+  Mat.square "Blasmat.syrk" c;
+  let ar, ac = shape trans a in
+  need "Blasmat.syrk" (ar = Mat.rows c) "a and c disagree on the order";
+  dsyrk uplo trans (Mat.rows c) ac alpha (Mat.data a) 0 (ld a) beta
+    (Mat.data c) 0 (ld c)
+
+let tri name side a b =
+  Mat.square name a;
+  let order = if is_left side then Mat.rows b else Mat.cols b in
+  need name (Mat.rows a = order) "a isn't of the order that side asks for"
+
+let trsm ?(side = Left) ?(uplo = Upper) ?(trans = No_trans) ?(diag = Non_unit)
+    ?(alpha = 1.0) a b =
+  tri "Blasmat.trsm" side a b;
+  dtrsm side uplo trans diag (Mat.rows b) (Mat.cols b) alpha (Mat.data a) 0
+    (ld a) (Mat.data b) 0 (ld b)
+
+let trmm ?(side = Left) ?(uplo = Upper) ?(trans = No_trans) ?(diag = Non_unit)
+    ?(alpha = 1.0) a b =
+  tri "Blasmat.trmm" side a b;
+  dtrmm side uplo trans diag (Mat.rows b) (Mat.cols b) alpha (Mat.data a) 0
+    (ld a) (Mat.data b) 0 (ld b)

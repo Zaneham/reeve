@@ -18,14 +18,14 @@ type env
     package is initialised. *)
 
 type kind = Pneg | Q | Ppos | Pnorm
-(** Which Legendre function {!dxlegf} is to compute, the Fortran [ID]:
+(** Which Legendre function {!Raw.dxlegf} is to compute, the Fortran [ID]:
     [Pneg] is P of negative order P(-mu,nu,x) (ID 1), [Q] is the function of
     the second kind Q(mu,nu,x) (ID 2), [Ppos] is P of positive order
     P(mu,nu,x) (ID 3) and [Pnorm] is the normalised Legendre polynomial
     (ID 4). *)
 
 type mode = By_x | By_theta
-(** How {!dxnrmp} reads its argument, the Fortran [MODE]: [By_x] takes it as
+(** How {!Raw.dxnrmp} reads its argument, the Fortran [MODE]: [By_x] takes it as
     x itself (MODE 1), [By_theta] as an angle whose cosine is x (MODE 2). *)
 
 val dxset : int -> int -> float -> int -> env
@@ -72,28 +72,69 @@ val dxcon : env -> xnum -> xnum
     index is too large for the conversion table or a scaling loop hits its
     bound. *)
 
-val dxlegf : env -> float -> int -> int -> int -> float -> kind -> xnum array
-(** [dxlegf env dnu1 nudiff mu1 mu2 theta kind] computes a vector of Legendre
-    functions of [kind] at x = cos [theta]. With [nudiff] = 0 it runs over the
-    orders mu = [mu1], [mu1]+1, ..., [mu2] at degree nu = [dnu1]; with
-    [mu1] = [mu2] it runs over the degrees nu = [dnu1], [dnu1]+1, ...,
-    [dnu1]+[nudiff] at order mu = [mu1]. The result has length
-    [mu2]-[mu1]+[nudiff]+1 and is in reduced form wherever the value fits a
-    float, so an element whose index is zero needs no further thought about
-    extended range. Requires [dnu1] >= -0.5, [nudiff] >= 0,
-    0 <= [mu1] <= [mu2], [theta] in (0, pi/2], and either [nudiff] = 0 or
-    [mu1] = [mu2]; [Pnorm] additionally requires an integer [dnu1]. Raises
-    [Invalid_argument] otherwise, and for an extended-range index overflow
-    underneath. *)
+(* ---- The Fortran shapes ---- *)
 
-val dxnrmp : env -> int -> int -> int -> float -> mode -> xnum array * int
-(** [dxnrmp env nu mu1 mu2 darg mode] computes the normalised Legendre
-    polynomials of degree [nu] and orders [mu1] to [mu2] at the argument
-    [darg], read according to [mode]. The normalisation is the one that makes
-    the integral of the square over -1 to 1 equal to one. Returns the vector,
-    of length [mu2]-[mu1]+1 and in reduced form wherever the value fits a
-    float, together with an estimate of the number of decimal digits lost to
-    rounding, so a result good to d digits in [darg] is good to d minus that
-    many. Requires [nu] >= 0, 0 <= [mu1] <= [mu2], and |[darg]| <= 1 for
-    [By_x] or |[darg]| <= pi for [By_theta]. Raises [Invalid_argument]
-    otherwise. *)
+module Raw : sig
+  (** The two Legendre entry points, argument for argument as the Fortran has
+      them. They're what the differential in [diff/] compares against the
+      reference Fortran. Use the surface below unless you want the Fortran's
+      own argument block. *)
+
+  val dxlegf : env -> float -> int -> int -> int -> float -> kind
+    -> xnum array
+  (** [dxlegf env dnu1 nudiff mu1 mu2 theta kind] computes a vector of
+      Legendre functions of [kind] at x = cos [theta]. With [nudiff] = 0 it
+      runs over the orders mu = [mu1], [mu1]+1, ..., [mu2] at degree
+      nu = [dnu1]; with [mu1] = [mu2] it runs over the degrees nu = [dnu1],
+      [dnu1]+1, ..., [dnu1]+[nudiff] at order mu = [mu1]. The result has
+      length [mu2]-[mu1]+[nudiff]+1 and is in reduced form wherever the value
+      fits a float, so an element whose index is zero needs no further thought
+      about extended range. Requires [dnu1] >= -0.5, [nudiff] >= 0,
+      0 <= [mu1] <= [mu2], [theta] in (0, pi/2], and either [nudiff] = 0 or
+      [mu1] = [mu2]; [Pnorm] additionally requires an integer [dnu1]. Raises
+      [Invalid_argument] otherwise, and for an extended-range index overflow
+      underneath. *)
+
+  val dxnrmp : env -> int -> int -> int -> float -> mode
+    -> xnum array * int
+  (** [dxnrmp env nu mu1 mu2 darg mode] computes the normalised Legendre
+      polynomials of degree [nu] and orders [mu1] to [mu2] at the argument
+      [darg], read according to [mode]. The normalisation is the one that
+      makes the integral of the square over -1 to 1 equal to one. Returns the
+      vector, of length [mu2]-[mu1]+1 and in reduced form wherever the value
+      fits a float, together with an estimate of the number of decimal digits
+      lost to rounding, so a result good to d digits in [darg] is good to d
+      minus that many. Requires [nu] >= 0, 0 <= [mu1] <= [mu2], and
+      |[darg]| <= 1 for [By_x] or |[darg]| <= pi for [By_theta]. Raises
+      [Invalid_argument] otherwise. *)
+end
+
+(* ---- The OCaml surface ---- *)
+
+val to_float : env -> xnum -> float option
+(** [to_float env a] is [a] as an ordinary float, or [None] when the value
+    needs the extended range to hold it. Raises [Invalid_argument] for a
+    principal part that isn't finite under a nonzero index, which is what
+    {!dxred} does with one. *)
+
+val legendre_orders : env -> kind -> nu:float -> mu1:int -> mu2:int
+  -> theta:float -> xnum array
+(** [legendre_orders env kind ~nu ~mu1 ~mu2 ~theta] is {!Raw.dxlegf} over the
+    orders mu = [mu1], [mu1]+1, ..., [mu2] at the one degree [nu], so the
+    result has length [mu2]-[mu1]+1. Same requirements and same
+    [Invalid_argument]s as {!Raw.dxlegf}. *)
+
+val legendre_degrees : env -> kind -> nu1:float -> count:int -> mu:int
+  -> theta:float -> xnum array
+(** [legendre_degrees env kind ~nu1 ~count ~mu ~theta] is {!Raw.dxlegf} over the
+    [count] degrees nu = [nu1], [nu1]+1, ..., [nu1]+[count]-1 at the one order
+    [mu], so the result has length [count] and [count] has to be at least one.
+    Same requirements and same [Invalid_argument]s as {!Raw.dxlegf}. *)
+
+val normalised_orders : env -> mode -> nu:int -> mu1:int -> mu2:int
+  -> arg:float -> xnum array * int
+(** [normalised_orders env mode ~nu ~mu1 ~mu2 ~arg] is {!Raw.dxnrmp} with its
+    integers labelled: the normalised Legendre polynomials of degree [nu] over
+    the orders mu = [mu1], [mu1]+1, ..., [mu2] at [arg], paired with the count
+    of decimal digits rounding has cost. Same requirements and same
+    [Invalid_argument]s as {!Raw.dxnrmp}. *)

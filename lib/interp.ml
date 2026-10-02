@@ -119,3 +119,46 @@ let dpolvl nder xx yp n x c work =
     done;
     (c.(0), ierr)
   end
+
+module Raw = struct
+  let dplint = dplint
+  let dpolvl = dpolvl
+  let dpolcf = dpolcf
+end
+
+(* ---- The OCaml surface ---- *)
+
+type t = { x : float array; c : float array }
+
+let make x y =
+  let n = Array.length x in
+  if n = 0 then invalid_arg "Interp.make: no points";
+  if Array.length y < n then
+    invalid_arg "Interp.make: fewer values than abscissas";
+  let c = Array.make n 0.0 in
+  dplint n x y c;
+  { x = Array.sub x 0 n; c }
+
+let points t = Array.length t.x
+
+let eval t xx =
+  let yfit, _ = dpolvl 0 xx [||] (Array.length t.x) t.x t.c [||] in
+  yfit
+
+let derivatives t xx nder =
+  if nder < 0 then invalid_arg "Interp.derivatives: negative order";
+  if nder = 0 then (eval t xx, [||])
+  else begin
+    let n = Array.length t.x in
+    let yp = Array.make nder 0.0 in
+    let work = Array.make (2 * n) 0.0 in
+    let yfit, _ = dpolvl nder xx yp n t.x t.c work in
+    (yfit, yp)
+  end
+
+let coefficients t xx =
+  let n = Array.length t.x in
+  let d = Array.make n 0.0 in
+  let work = Array.make (2 * n) 0.0 in
+  dpolcf xx n t.x t.c d work;
+  d

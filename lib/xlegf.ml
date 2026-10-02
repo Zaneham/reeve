@@ -937,3 +937,25 @@ let dxnrmp env nu mu1 mu2 darg mode =
       (dpn, isig)
     end
   end
+
+module Raw = struct
+  let dxlegf = dxlegf
+  let dxnrmp = dxnrmp
+end
+
+(* ---- The OCaml surface ---- *)
+
+let to_float env a =
+  if a.ix = 0 then Some a.x
+  else
+    let r = dxred env a in
+    if r.ix = 0 then Some r.x else None
+
+let legendre_orders env kind ~nu ~mu1 ~mu2 ~theta =
+  dxlegf env nu 0 mu1 mu2 theta kind
+
+let legendre_degrees env kind ~nu1 ~count ~mu ~theta =
+  dxlegf env nu1 (count - 1) mu mu theta kind
+
+let normalised_orders env mode ~nu ~mu1 ~mu2 ~arg =
+  dxnrmp env nu mu1 mu2 arg mode

@@ -230,7 +230,7 @@ let d9lgmc x =
   if x < 10.0 then invalid_arg "d9lgmc: x must be >= 10"
   else if x < d9lgmc_xbig then begin
     let t = 10.0 /. x in
-    Specfun.dcsevl ((2.0 *. t *. t) -. 1.0) algmcs nalgm /. x
+    Specfun.Raw.dcsevl ((2.0 *. t *. t) -. 1.0) algmcs nalgm /. x
   end
   else if x < d9lgmc_xmax then 1.0 /. (12.0 *. x)
   else 0.0
@@ -339,7 +339,7 @@ let dpoch a x =
           -. x +. d9lgmc (b +. x) -. d9lgmc b)
       in
       if a < 0.0 && r <> 0.0 then
-        r /. (cos (pi *. x) +. (Specfun.dcot (pi *. a) *. sin (pi *. x)))
+        r /. (cos (pi *. x) +. (Specfun.Raw.dcot (pi *. a) *. sin (pi *. x)))
       else r
   end
 
@@ -397,7 +397,7 @@ let dpoch1 a x =
         let sinpxx = sin (pi *. x) /. x in
         let sinpx2 = sin (0.5 *. pi *. x) in
         let trig =
-          (sinpxx *. Specfun.dcot (pi *. b)) -. (2.0 *. sinpx2 *. (sinpx2 /. x))
+          (sinpxx *. Specfun.Raw.dcot (pi *. b)) -. (2.0 *. sinpx2 *. (sinpx2 /. x))
         in
         trig +. ((1.0 +. (x *. trig)) *. !r)
       end
@@ -1723,3 +1723,48 @@ let drc6j l2 l3 l4 l5 l6 sixcof ndim =
       done;
     (l1min, l1max)
   end
+
+module Raw = struct
+  let dpsifn = dpsifn
+  let drc3jj = drc3jj
+  let drc3jm = drc3jm
+  let drc6j = drc6j
+end
+
+(* ---- The OCaml surface ---- *)
+
+let dpsifn ?(scaled = false) x n m =
+  let ans = Array.make (max 1 m) 0.0 in
+  let nz = Raw.dpsifn x n (if scaled then 2 else 1) m ans in
+  (ans, nz)
+
+let wigner_ndim lo hi =
+  let n = int_of_float (hi -. lo +. 1.0 +. wigner_eps) in
+  if n >= 1 then n else 1
+
+let drc3jj l2 l3 m2 m3 =
+  let nd =
+    wigner_ndim (Float.max (Float.abs (l2 -. l3)) (Float.abs (-.m2 -. m3)))
+      (l2 +. l3)
+  in
+  let c = Array.make nd 0.0 in
+  let l1min, l1max = Raw.drc3jj l2 l3 m2 m3 c nd in
+  (c, l1min, l1max)
+
+let drc3jm l1 l2 l3 m1 =
+  let nd =
+    wigner_ndim (Float.max (-.l2) (-.l3 -. m1)) (Float.min l2 (l3 -. m1))
+  in
+  let c = Array.make nd 0.0 in
+  let m2min, m2max = Raw.drc3jm l1 l2 l3 m1 c nd in
+  (c, m2min, m2max)
+
+let drc6j l2 l3 l4 l5 l6 =
+  let nd =
+    wigner_ndim
+      (Float.max (Float.abs (l2 -. l3)) (Float.abs (l5 -. l6)))
+      (Float.min (l2 +. l3) (l5 +. l6))
+  in
+  let c = Array.make nd 0.0 in
+  let l1min, l1max = Raw.drc6j l2 l3 l4 l5 l6 c nd in
+  (c, l1min, l1max)

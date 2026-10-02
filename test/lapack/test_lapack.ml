@@ -5,7 +5,7 @@
    where the arithmetic is exact. *)
 
 open Reeve.Blasmat
-open Reeve.Lapack
+open Reeve.Lapack.Raw
 
 let tol = 1.0e-10
 let bad = ref 0

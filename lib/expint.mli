@@ -13,16 +13,6 @@ val dei : float -> float
     principal value for [x] < 0, computed as [-. de1 (-. x)]. Raises
     [Invalid_argument] at x = 0. *)
 
-val dexint : float -> int -> int -> int -> float -> float array -> int
-(** [dexint x n kode m tol en] fills [en.(0) .. en.(m-1)] with the sequence
-    E(n+k, x) for k = 0 .. m-1, unscaled for [kode = 1] and multiplied by
-    [exp x] for [kode = 2], and returns the number of components set to zero
-    by underflow, which is either zero or [m]. Needs [x >= 0], [n >= 1],
-    [m >= 1], [kode] either 1 or 2, [tol] between the double precision unit
-    roundoff and 0.1, and not both [x] = 0 and [n] = 1; raises
-    [Invalid_argument] otherwise, and also where the Fortran reports its
-    algorithm termination condition unmet. *)
-
 val dli : float -> float
 (** [dli x] is the logarithmic integral li(x) for [x] > 0, computed as
     [dei (log x)]. Raises [Invalid_argument] for [x] <= 0 and at x = 1, where
@@ -82,3 +72,39 @@ val d9pak : float -> int -> float
 val d9upak : float -> float * int
 (** [d9upak x] is the pair [(y, n)] with [x = y * 2 ** n] and [abs y] in
     [[0.5, 1.0)], or [(x, 0)] for a zero, an infinity or a NaN. *)
+
+(* ---- The Fortran shape ---- *)
+
+module Raw : sig
+  (** The Fortran shape of the sequence routine, argument for argument. It's
+      what the differential in [diff/] compares against the reference Fortran.
+      Use {!sequence} unless you want to fill an array you already have. *)
+
+  val dexint : float -> int -> int -> int -> float -> float array -> int
+  (** [dexint x n kode m tol en] fills [en.(0) .. en.(m-1)] with the sequence
+      E(n+k, x) for k = 0 .. m-1, unscaled for [kode = 1] and multiplied by
+      [exp x] for [kode = 2], and returns the number of components set to zero
+      by underflow, which is either zero or [m]. Needs [x >= 0], [n >= 1],
+      [m >= 1], [kode] either 1 or 2, [tol] between the double precision unit
+      roundoff and 0.1, and not both [x] = 0 and [n] = 1; raises
+      [Invalid_argument] otherwise, and also where the Fortran reports its
+      algorithm termination condition unmet. *)
+end
+
+(* ---- The OCaml surface ---- *)
+
+type scaling = Unscaled | Exp_scaled
+(** Whether {!sequence} hands back E(n,x) itself or [exp x] times it, the
+    Fortran [KODE]. The scaled form is the one to ask for when the unscaled
+    values would underflow. *)
+
+val sequence : ?tol:float -> ?scaling:scaling -> n:int -> count:int -> float
+  -> float array
+(** [sequence ~n ~count x] is the [count] exponential integrals E(n,x),
+    E(n+1,x), ..., E(n+count-1,x), scaled by [exp x] with
+    [~scaling:Exp_scaled]. [~tol] asks for a relative accuracy and defaults to
+    the tightest the routine will take; it has to sit between the unit roundoff
+    and 0.1. An all-zero result means the whole sequence underflowed, which is
+    the only way a zero gets in here. Needs [x >= 0], [n >= 1], [count >= 1]
+    and not both [x] = 0 and [n] = 1, and raises [Invalid_argument]
+    otherwise. *)

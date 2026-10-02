@@ -4,7 +4,8 @@
    the slatec-modern Fortran suites, the level 3 numbers being the IBM
    System/360 values captured through Hercules. *)
 
-open Reeve.Interp
+open Reeve.Interp.Raw
+module Interp = Reeve.Interp
 
 let tol = 1.0e-10
 let bad = ref 0
@@ -285,6 +286,69 @@ let bad_arguments () =
   raises "dplint repeated adjacent abscissa" (fun () ->
       dplint 2 [| 4.0; 4.0 |] [| 1.0; 2.0 |] (Array.make 2 0.0))
 
+(* ---- The OCaml surface ---- *)
+
+let cubic z = (2.0 *. z *. z *. z) -. (3.0 *. z) +. 7.0
+let cubic' z = (6.0 *. z *. z) -. 3.0
+
+let surface_reproduces_a_cubic () =
+  let x = [| 0.0; 1.0; 2.0; 3.0 |] in
+  let t = Interp.make x (Array.map cubic x) in
+  check "surface points" (Interp.points t = 4);
+  List.iter
+    (fun z -> near "surface eval" (Interp.eval t z) (cubic z))
+    [ -1.5; 0.0; 0.25; 1.5; 2.75; 3.0; 4.5 ]
+
+let surface_derivatives () =
+  let x = [| 0.0; 1.0; 2.0; 3.0 |] in
+  let t = Interp.make x (Array.map cubic x) in
+  let v, d = Interp.derivatives t 1.5 4 in
+  near "surface derivatives value" v (cubic 1.5);
+  check "surface derivatives count" (Array.length d = 4);
+  near "surface first derivative" d.(0) (cubic' 1.5);
+  near "surface second derivative" d.(1) (12.0 *. 1.5);
+  near "surface third derivative" d.(2) 12.0;
+  near "surface fourth derivative" d.(3) 0.0;
+  let v0, d0 = Interp.derivatives t 2.25 0 in
+  near "surface no derivatives value" v0 (cubic 2.25);
+  check "surface no derivatives count" (Array.length d0 = 0)
+
+let surface_coefficients () =
+  let x = [| -2.0; -1.0; 0.0; 1.0; 2.0 |] in
+  let t = Interp.make x (Array.map cubic x) in
+  let d = Interp.coefficients t 1.0 in
+  check "surface coefficients count" (Array.length d = 5);
+  near "surface coefficient of zero order" d.(0) (cubic 1.0);
+  near "surface coefficient of first order" d.(1) (cubic' 1.0);
+  List.iter
+    (fun z -> near "surface coefficients evaluate" (horner d 1.0 z) (cubic z))
+    [ -3.0; -0.5; 1.0; 2.5 ]
+
+let surface_keeps_its_own_abscissas () =
+  let x = [| 0.0; 1.0; 2.0 |] in
+  let t = Interp.make x [| 0.0; 1.0; 4.0 |] in
+  x.(1) <- 99.0;
+  near "surface copied the abscissas" (Interp.eval t 3.0) 9.0
+
+let surface_one_point () =
+  let t = Interp.make [| 4.0 |] [| 7.0 |] in
+  near "surface one point value" (Interp.eval t 1.0) 7.0;
+  let v, d = Interp.derivatives t 1.0 2 in
+  near "surface one point derivatives value" v 7.0;
+  same "surface one point derivatives" d [| 0.0; 0.0 |];
+  same "surface one point coefficients" (Interp.coefficients t 1.0) [| 7.0 |]
+
+let surface_errors () =
+  raises "surface rejects no points" (fun () ->
+      ignore (Interp.make [||] [||]));
+  raises "surface rejects fewer values than abscissas" (fun () ->
+      ignore (Interp.make [| 0.0; 1.0 |] [| 0.0 |]));
+  raises "surface rejects a repeated abscissa" (fun () ->
+      ignore (Interp.make [| 1.0; 2.0; 1.0 |] [| 0.0; 1.0; 2.0 |]));
+  let t = Interp.make [| 0.0; 1.0 |] [| 0.0; 1.0 |] in
+  raises "surface rejects a negative order" (fun () ->
+      ignore (Interp.derivatives t 0.5 (-1)))
+
 let () =
   l1_dplint_quadratic ();
   l1_dpolcf_taylor ();
@@ -306,4 +370,10 @@ let () =
   excess_derivatives ();
   work_untouched_at_nder_zero ();
   bad_arguments ();
+  surface_reproduces_a_cubic ();
+  surface_derivatives ();
+  surface_coefficients ();
+  surface_keeps_its_own_abscissas ();
+  surface_one_point ();
+  surface_errors ();
   if !bad = 0 then print_string "interp: all checks passed\n" else exit 1

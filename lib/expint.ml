@@ -995,7 +995,7 @@ let dexprl x =
 let dlnrel x =
   if x <= -1.0 then invalid_arg "dlnrel: x is <= -1"
   else if Float.abs x <= 0.375 then
-    x *. (1.0 -. (x *. Specfun.dcsevl (x /. 0.375) alnrcs nlnrel))
+    x *. (1.0 -. (x *. Specfun.Raw.dcsevl (x /. 0.375) alnrcs nlnrel))
   else log (1.0 +. x)
 
 let d9ln2r x =
@@ -1004,8 +1004,8 @@ let d9ln2r x =
   else if x < -0.625 || x > 0.8125 then
     (log (1.0 +. x) -. (x *. (1.0 -. (0.5 *. x)))) /. ((x *. x) *. x)
   else if x < 0.0 then
-    0.375 +. Specfun.dcsevl ((16.0 *. x /. 5.0) +. 1.0) ln21cs ntln21
-  else 0.375 +. Specfun.dcsevl ((32.0 *. x /. 13.0) -. 1.0) ln22cs ntln22
+    0.375 +. Specfun.Raw.dcsevl ((16.0 *. x /. 5.0) +. 1.0) ln21cs ntln21
+  else 0.375 +. Specfun.Raw.dcsevl ((32.0 *. x /. 13.0) -. 1.0) ln22cs ntln22
 
 let d9atn1 x =
   let y = Float.abs x in
@@ -1013,7 +1013,7 @@ let d9atn1 x =
     invalid_arg "d9atn1: no precision in answer because x is too big"
   else if y > 1.0 then (atan x -. x) /. ((x *. x) *. x)
   else if y > d9atn1_xsml then
-    -0.25 +. Specfun.dcsevl (((2.0 *. y) *. y) -. 1.0) atn1cs ntatn1
+    -0.25 +. Specfun.Raw.dcsevl (((2.0 *. y) *. y) -. 1.0) atn1cs ntatn1
   else -1.0 /. 3.0
 
 let dsindg x =
@@ -1038,35 +1038,35 @@ let dspenc x =
   if x > 2.0 then begin
     let r = (2.0 *. pi26) -. (0.5 *. (log x *. log x)) in
     if x < dspenc_xbig then
-      r -. ((1.0 +. Specfun.dcsevl ((4.0 /. x) -. 1.0) spencs nspenc) /. x)
+      r -. ((1.0 +. Specfun.Raw.dcsevl ((4.0 /. x) -. 1.0) spencs nspenc) /. x)
     else r
   end
   else if x > 1.0 then
     pi26
     -. (0.5 *. log x *. log (((x -. 1.0) *. (x -. 1.0)) /. x))
     +. ((x -. 1.0)
-        *. (1.0 +. Specfun.dcsevl ((4.0 *. (x -. 1.0) /. x) -. 1.0) spencs nspenc)
+        *. (1.0 +. Specfun.Raw.dcsevl ((4.0 *. (x -. 1.0) /. x) -. 1.0) spencs nspenc)
         /. x)
   else if x > 0.5 then
     if x <> 1.0 then
       pi26
       -. (log x *. log (1.0 -. x))
       -. ((1.0 -. x)
-          *. (1.0 +. Specfun.dcsevl ((4.0 *. (1.0 -. x)) -. 1.0) spencs nspenc))
+          *. (1.0 +. Specfun.Raw.dcsevl ((4.0 *. (1.0 -. x)) -. 1.0) spencs nspenc))
     else pi26
   else if x >= 0.0 then
-    x *. (1.0 +. Specfun.dcsevl ((4.0 *. x) -. 1.0) spencs nspenc)
+    x *. (1.0 +. Specfun.Raw.dcsevl ((4.0 *. x) -. 1.0) spencs nspenc)
   else if x > -1.0 then
     (-0.5 *. (log (1.0 -. x) *. log (1.0 -. x)))
     -. (x
-        *. (1.0 +. Specfun.dcsevl ((4.0 *. x /. (x -. 1.0)) -. 1.0) spencs nspenc)
+        *. (1.0 +. Specfun.Raw.dcsevl ((4.0 *. x /. (x -. 1.0)) -. 1.0) spencs nspenc)
         /. (x -. 1.0))
   else begin
     let aln = log (1.0 -. x) in
     let r = -.pi26 -. (0.5 *. aln *. ((2.0 *. log (-.x)) -. aln)) in
     if x > -.dspenc_xbig then
       r
-      +. ((1.0 +. Specfun.dcsevl ((4.0 /. (1.0 -. x)) -. 1.0) spencs nspenc)
+      +. ((1.0 +. Specfun.Raw.dcsevl ((4.0 /. (1.0 -. x)) -. 1.0) spencs nspenc)
           /. (1.0 -. x))
     else r
   end
@@ -1077,19 +1077,19 @@ let de1 x =
   if x = 0.0 then invalid_arg "de1: x is 0"
   else if x > de1_xmax then 0.0
   else if x > 4.0 then
-    exp (-.x) /. x *. (1.0 +. Specfun.dcsevl ((8.0 /. x) -. 1.0) ae14cs ntae14)
+    exp (-.x) /. x *. (1.0 +. Specfun.Raw.dcsevl ((8.0 /. x) -. 1.0) ae14cs ntae14)
   else if x > 1.0 then
-    exp (-.x) /. x *. (1.0 +. Specfun.dcsevl (((8.0 /. x) -. 5.0) /. 3.0) ae13cs ntae13)
+    exp (-.x) /. x *. (1.0 +. Specfun.Raw.dcsevl (((8.0 /. x) -. 5.0) /. 3.0) ae13cs ntae13)
   else if x > -1.0 then
-    -.log (Float.abs x) -. 0.6875 +. x +. Specfun.dcsevl x e12cs nte12
+    -.log (Float.abs x) -. 0.6875 +. x +. Specfun.Raw.dcsevl x e12cs nte12
   else if x > -4.0 then
-    -.log (-.x) +. Specfun.dcsevl (((2.0 *. x) +. 5.0) /. 3.0) e11cs nte11
+    -.log (-.x) +. Specfun.Raw.dcsevl (((2.0 *. x) +. 5.0) /. 3.0) e11cs nte11
   else if x > -8.0 then
-    exp (-.x) /. x *. (1.0 +. Specfun.dcsevl ((16.0 /. x) +. 3.0) ae12cs ntae12)
+    exp (-.x) /. x *. (1.0 +. Specfun.Raw.dcsevl ((16.0 /. x) +. 3.0) ae12cs ntae12)
   else if x > -32.0 then
     exp (-.x) /. x
-    *. (1.0 +. Specfun.dcsevl (((64.0 /. x) +. 5.0) /. 3.0) ae11cs ntae11)
-  else exp (-.x) /. x *. (1.0 +. Specfun.dcsevl ((64.0 /. x) +. 1.0) ae10cs ntae10)
+    *. (1.0 +. Specfun.Raw.dcsevl (((64.0 /. x) +. 5.0) /. 3.0) ae11cs ntae11)
+  else exp (-.x) /. x *. (1.0 +. Specfun.Raw.dcsevl ((64.0 /. x) +. 1.0) ae10cs ntae10)
 
 let dei x = -.de1 (-.x)
 
@@ -1104,11 +1104,11 @@ let ddaws x =
   let y = Float.abs x in
   if y <= ddaws_xsml then x
   else if y <= 1.0 then
-    x *. (0.75 +. Specfun.dcsevl (((2.0 *. y) *. y) -. 1.0) dawcs ntdaw)
+    x *. (0.75 +. Specfun.Raw.dcsevl (((2.0 *. y) *. y) -. 1.0) dawcs ntdaw)
   else if y <= 4.0 then
-    x *. (0.25 +. Specfun.dcsevl (((0.125 *. y) *. y) -. 1.0) daw2cs ntdaw2)
+    x *. (0.25 +. Specfun.Raw.dcsevl (((0.125 *. y) *. y) -. 1.0) daw2cs ntdaw2)
   else if y <= ddaws_xbig then
-    (0.5 +. Specfun.dcsevl ((32.0 /. (y *. y)) -. 1.0) dawacs ntdawa) /. x
+    (0.5 +. Specfun.Raw.dcsevl ((32.0 /. (y *. y)) -. 1.0) dawacs ntdawa) /. x
   else if y <= ddaws_xmax then 0.5 /. x
   else if y > ddaws_xmax then 0.0
   else x
@@ -1353,3 +1353,19 @@ let dexint x n kode m tol en =
      end
    with Dexint_done -> ());
   !nz
+
+module Raw = struct
+  let dexint = dexint
+end
+
+(* ---- The OCaml surface ---- *)
+
+type scaling = Unscaled | Exp_scaled
+
+let tol_min = Float.max eps_dp 0.5e-18
+
+let sequence ?(tol = tol_min) ?(scaling = Unscaled) ~n ~count x =
+  let en = Array.make (max 1 count) 0.0 in
+  let kode = match scaling with Unscaled -> 1 | Exp_scaled -> 2 in
+  ignore (dexint x n kode count tol en);
+  en

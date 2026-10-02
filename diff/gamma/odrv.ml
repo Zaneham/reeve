@@ -544,7 +544,7 @@ let () =
                   emi "dpsifn:n" !nc n;
                   emi "dpsifn:k" !nc kode;
                   emi "dpsifn:m" !nc m;
-                  match Gamma.dpsifn x n kode m ans with
+                  match Gamma.Raw.dpsifn x n kode m ans with
                   | nz ->
                     emi "dpsifn:nz" !nc nz;
                     emi "dpsifn:ie" !nc 0;
@@ -619,7 +619,7 @@ let () =
       em "drc3jj:m3" i m3;
       emi "drc3jj:nd" i nf;
       Array.fill wig 0 4100 0.0;
-      match Gamma.drc3jj l2 l3 m2 m3 wig nf with
+      match Gamma.Raw.drc3jj l2 l3 m2 m3 wig nf with
       | lmn, lmx ->
         em "drc3jj:mn" i lmn;
         em "drc3jj:mx" i lmx;
@@ -651,7 +651,7 @@ let () =
       em "drc3jm:m1" i m1;
       emi "drc3jm:nd" i nf;
       Array.fill wig 0 4100 0.0;
-      match Gamma.drc3jm l1 l2 l3 m1 wig nf with
+      match Gamma.Raw.drc3jm l1 l2 l3 m1 wig nf with
       | lmn, lmx ->
         em "drc3jm:mn" i lmn;
         em "drc3jm:mx" i lmx;
@@ -687,7 +687,7 @@ let () =
       em "drc6j:l6" i l6;
       emi "drc6j:nd" i nf;
       Array.fill wig 0 4100 0.0;
-      match Gamma.drc6j l2 l3 l4 l5 l6 wig nf with
+      match Gamma.Raw.drc6j l2 l3 l4 l5 l6 wig nf with
       | lmn, lmx ->
         em "drc6j:mn" i lmn;
         em "drc6j:mx" i lmx;

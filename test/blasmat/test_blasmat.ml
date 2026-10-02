@@ -4,6 +4,9 @@
    arithmetic or obtained by undoing the operation with its inverse. *)
 
 open Reeve.Blasmat
+open Reeve.Blasmat.Raw
+
+module M = Reeve.Mat
 
 let tol = 1.0e-10
 let bad = ref 0
@@ -416,6 +419,119 @@ let zero_dimensions_are_quiet () =
   same "zero dimensions leave b" b [| 2.0 |];
   same "zero dimensions leave c" c [| 3.0 |]
 
+(* ---- The OCaml surface ---- *)
+
+let mt rows =
+  M.init (Array.length rows) (Array.length rows.(0)) (fun i j -> rows.(i).(j))
+
+let mnear what a b =
+  check (what ^ " shape") (M.rows a = M.rows b && M.cols a = M.cols b);
+  for j = 0 to M.cols a - 1 do
+    for i = 0 to M.rows a - 1 do
+      near (Printf.sprintf "%s (%d,%d)" what i j) (M.get a i j) (M.get b i j)
+    done
+  done
+
+let s_gemm () =
+  let a = mt a22 and b = mt b22 and c = M.create 2 2 in
+  gemm a b c;
+  mnear "gemm" c (mt [| [| 19.0; 22.0 |]; [| 43.0; 50.0 |] |])
+
+let s_gemm_trans () =
+  let a = mt a22 and b = mt b22 and c = M.create 2 2 in
+  gemm ~transa:Trans a b c;
+  mnear "gemm transa" c (mt [| [| 26.0; 30.0 |]; [| 38.0; 44.0 |] |]);
+  let d = M.create 2 2 in
+  gemm ~transb:Trans a b d;
+  mnear "gemm transb" d (mt [| [| 17.0; 23.0 |]; [| 39.0; 53.0 |] |])
+
+let s_gemm_scalars () =
+  let a = mt a22 and b = mt b22 in
+  let c = mt [| [| 1.0; 1.0 |]; [| 1.0; 1.0 |] |] in
+  gemm ~alpha:2.0 ~beta:3.0 a b c;
+  mnear "gemm scalars" c (mt [| [| 41.0; 47.0 |]; [| 89.0; 103.0 |] |])
+
+let s_gemm_rectangular () =
+  let a = mt [| [| 1.0; 2.0; 3.0 |]; [| 4.0; 5.0; 6.0 |] |] in
+  let b = mt [| [| 7.0; 8.0 |]; [| 9.0; 10.0 |]; [| 11.0; 12.0 |] |] in
+  let c = M.create 2 2 in
+  gemm a b c;
+  mnear "gemm 2x3 3x2" c (mt [| [| 58.0; 64.0 |]; [| 139.0; 154.0 |] |])
+
+let s_gemv () =
+  let a = mt a22 in
+  let y = zeros 2 in
+  gemv a [| 1.0; 1.0 |] y;
+  same "gemv" y [| 3.0; 7.0 |];
+  let z = [| 1.0; 1.0 |] in
+  gemv ~trans:Trans ~alpha:2.0 ~beta:1.0 a [| 1.0; 1.0 |] z;
+  same "gemv trans" z [| 9.0; 13.0 |]
+
+let s_ger () =
+  let a = M.create 2 2 in
+  ger [| 1.0; 2.0 |] [| 3.0; 4.0 |] a;
+  mnear "ger" a (mt [| [| 3.0; 4.0 |]; [| 6.0; 8.0 |] |]);
+  ger ~alpha:(-1.0) [| 1.0; 2.0 |] [| 3.0; 4.0 |] a;
+  mnear "ger undone" a (M.create 2 2)
+
+let s_syrk () =
+  let a = mt a22 and c = M.create 2 2 in
+  syrk a c;
+  near "syrk 00" (M.get c 0 0) 5.0;
+  near "syrk 01" (M.get c 0 1) 11.0;
+  near "syrk 11" (M.get c 1 1) 25.0;
+  check "syrk leaves the lower triangle" (M.get c 1 0 = 0.0);
+  let d = M.create 2 2 in
+  syrk ~uplo:Lower ~trans:Trans a d;
+  near "syrk lower trans 00" (M.get d 0 0) 10.0;
+  near "syrk lower trans 10" (M.get d 1 0) 14.0;
+  near "syrk lower trans 11" (M.get d 1 1) 20.0;
+  check "syrk leaves the upper triangle" (M.get d 0 1 = 0.0)
+
+let s_trsm_trmm_roundtrip () =
+  let p = 5 in
+  let a = M.of_array p p (tri p) in
+  let b0 = M.init p 3 (fun _ _ -> rnd ()) in
+  let b = M.copy b0 in
+  trsm ~uplo:Upper ~alpha:2.0 a b;
+  trmm ~uplo:Upper ~alpha:0.5 a b;
+  mnear "trsm then trmm" b b0;
+  let a3 = M.of_array 3 3 (tri 3) in
+  let c = M.copy b0 in
+  trmm ~side:Right ~uplo:Lower ~trans:Trans ~diag:Non_unit a3 c;
+  trsm ~side:Right ~uplo:Lower ~trans:Trans ~diag:Non_unit a3 c;
+  mnear "trmm then trsm on the right" c b0;
+  let d = M.copy b0 in
+  trsm ~uplo:Lower ~diag:Unit a d;
+  trmm ~uplo:Lower ~diag:Unit a d;
+  mnear "trsm then trmm with a unit diagonal" d b0
+
+let s_conformance () =
+  let two = M.create 2 2 and three = M.create 3 3 in
+  raises_named "gemm inner" "Blasmat.gemm" (fun () ->
+      gemm (M.create 2 3) (M.create 2 2) two);
+  raises_named "gemm rows" "Blasmat.gemm" (fun () ->
+      gemm (M.create 3 2) (M.create 2 2) two);
+  raises_named "gemm cols" "Blasmat.gemm" (fun () ->
+      gemm (M.create 2 2) (M.create 2 3) two);
+  raises_named "gemv x" "Blasmat.gemv" (fun () -> gemv two (zeros 3) (zeros 2));
+  raises_named "gemv y" "Blasmat.gemv" (fun () -> gemv two (zeros 2) (zeros 3));
+  raises_named "ger x" "Blasmat.ger" (fun () ->
+      ger (zeros 3) (zeros 2) two);
+  raises_named "ger y" "Blasmat.ger" (fun () ->
+      ger (zeros 2) (zeros 3) two);
+  raises_named "syrk c not square" "Blasmat.syrk" (fun () ->
+      syrk two (M.create 2 3));
+  raises_named "syrk order" "Blasmat.syrk" (fun () -> syrk three two);
+  raises_named "trsm a not square" "Blasmat.trsm" (fun () ->
+      trsm (M.create 2 3) two);
+  raises_named "trsm order" "Blasmat.trsm" (fun () -> trsm three two);
+  raises_named "trsm right order" "Blasmat.trsm" (fun () ->
+      trsm ~side:Right three two);
+  raises_named "trmm a not square" "Blasmat.trmm" (fun () ->
+      trmm (M.create 3 2) two);
+  raises_named "trmm order" "Blasmat.trmm" (fun () -> trmm three two)
+
 let () =
   gemm_nn ();
   gemm_tn ();
@@ -458,4 +574,13 @@ let () =
   trmm_trsm_roundtrip ();
   bad_arguments ();
   zero_dimensions_are_quiet ();
+  s_gemm ();
+  s_gemm_trans ();
+  s_gemm_scalars ();
+  s_gemm_rectangular ();
+  s_gemv ();
+  s_ger ();
+  s_syrk ();
+  s_trsm_trmm_roundtrip ();
+  s_conformance ();
   if !bad = 0 then print_string "blasmat: all checks passed\n" else exit 1

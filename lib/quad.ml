@@ -578,3 +578,53 @@ let dpfqad f ldc c xi lxi k id x1 x2 tol =
     done;
     ((if x1 > x2 then -. !q else !q), !ierr)
   end
+
+module Raw = struct
+  let davint = davint
+  let dgaus8 = dgaus8
+  let dqnc79 = dqnc79
+  let dppgq8 = dppgq8
+  let dpfqad = dpfqad
+end
+
+(* ---- The OCaml surface ---- *)
+
+type result = { value : float; error : float option; converged : bool }
+
+exception Too_narrow of float * float
+
+let default_tol = sqrt eps_dp
+
+let signed_tol tol =
+  let t = Float.abs tol in
+  -.(if t = 0.0 then default_tol else t)
+
+let gauss8 ?(tol = default_tol) f a b =
+  let ans, ierr, est = dgaus8 f a b (signed_tol tol) in
+  if ierr < 0 then raise (Too_narrow (a, b));
+  { value = ans; error = Some (Float.abs est); converged = ierr = 1 }
+
+let newton_cotes7 ?(tol = default_tol) f a b =
+  if a = b then { value = 0.0; error = None; converged = true }
+  else begin
+    let ans, ierr, _ = dqnc79 f a b (signed_tol tol) in
+    if ierr < 0 then raise (Too_narrow (a, b));
+    { value = ans; error = None; converged = ierr = 1 }
+  end
+
+let integrate_table x y lo up =
+  let n = Array.length x in
+  if n < 2 then
+    invalid_arg "Quad.integrate_table: fewer than two tabulated points";
+  if Array.length y < n then
+    invalid_arg "Quad.integrate_table: fewer values than abscissas";
+  if up < lo then
+    invalid_arg "Quad.integrate_table: the upper limit is below the lower";
+  let ans, ierr = davint x y n lo up in
+  if ierr = 3 then
+    invalid_arg
+      "Quad.integrate_table: fewer than three abscissas between the limits";
+  if ierr = 4 then
+    invalid_arg "Quad.integrate_table: the abscissas do not increase";
+  if ierr <> 1 then invalid_arg "Quad.integrate_table: improper input";
+  ans

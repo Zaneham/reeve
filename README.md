@@ -34,12 +34,33 @@ Level 4 of my modernised SLATEC scheme asks what hostile gfortran flags do to a
 routine. OCaml has no equivalent, so Reeve does not claim it. However as this was made to benchmark
 some of my stuff in the OCaml compiler I may write some numbers down
 
-## Calling conventions
+## Using it
 
-A matrix is a `float array`, a base offset and an `lda`, column major, so
-`(i, j)` is at `off + i + j * lda`. A vector is a `float array`, a base offset
-and an increment. Fortran character options are variants. Pivot and permutation
-vectors are zero based.
+    opam pin add reeve git+https://github.com/Zaneham/reeve
+
+then `(libraries reeve)` in your dune file.
+
+    open Reeve
+
+    let info = Lapack.dgesv n 1 a 0 n ipiv 0 b 0 n
+    let info = Lapack.dpotrf Blasmat.Upper n a 0 n
+    let info = Lapack.dgetrf m n a 0 lda ipiv 0
+
+    Blasmat.dgemm No_trans Trans m n k 1.0 a 0 lda b 0 ldb 0.0 c 0 ldc
+    Blas.daxpy n alpha x 0 1 y 0 1
+    let d = Blas.ddot n x 0 1 y 0 1
+
+    let nz = Bessel.dbesj x 0.0 3 y
+    let g  = Specfun.dgamln x
+    let r  = Specfun.drf x y z
+    let q, ierr, err = Quad.dgaus8 f a b 1e-12
+    Sort.dsort x carry n Sort.Increasing_carry
+
+Arguments are the Fortran's in the Fortran's order, with a base offset after
+every array. `info` is returned, pivots are zero based, and character options
+are variants.
+
+Names are the Fortran's, lowercase. Each `.mli` has a line per routine.
 
 ## Build
 

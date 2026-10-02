@@ -4,6 +4,7 @@
    the same order. *)
 
 open Reeve.Xlegf
+open Reeve.Xlegf.Raw
 
 let hex v = Printf.sprintf "%016LX" (Int64.bits_of_float v)
 let pi = 4.0 *. atan 1.0

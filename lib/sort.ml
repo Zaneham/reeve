@@ -27,7 +27,7 @@ let descends kflag =
    a single element. Singleton's cutoff was 11. *)
 let dsort dx dy n kflag =
   let nn = n in
-  if nn < 1 then Laux.xerbla "dsort" 3;
+  if nn < 1 then Laux.Raw.xerbla "dsort" 3;
   let carry = carries kflag in
   let down = descends kflag in
   if down then
@@ -167,7 +167,7 @@ let dsort dx dy n kflag =
 
 let dpsort dx n iperm kflag =
   let nn = n in
-  if nn < 1 then Laux.xerbla "dpsort" 2;
+  if nn < 1 then Laux.Raw.xerbla "dpsort" 2;
   for p = 1 to nn do
     iperm.(p - 1) <- p
   done;
@@ -308,13 +308,13 @@ let dpsort dx n iperm kflag =
 (* ---- dpperm ---- *)
 
 let dpperm dx n iperm =
-  if n < 1 then Laux.xerbla "dpperm" 2;
+  if n < 1 then Laux.Raw.xerbla "dpperm" 2;
   let ip = Array.init n (fun p -> iperm.(p) + 1) in
   for i = 1 to n do
     let indx = abs ip.(i - 1) in
     if indx >= 1 && indx <= n && ip.(indx - 1) > 0 then
       ip.(indx - 1) <- -ip.(indx - 1)
-    else Laux.xerbla "dpperm" 3
+    else Laux.Raw.xerbla "dpperm" 3
   done;
   for istrt = 1 to n do
     if ip.(istrt - 1) <= 0 then begin
@@ -354,3 +354,52 @@ let d1merg tcos i1 m1 i2 m2 i3 =
     in
     step 0 0 0
   end
+
+module Raw = struct
+  type nonrec kflag =
+    kflag =
+    | Increasing
+    | Increasing_carry
+    | Decreasing
+    | Decreasing_carry
+
+  let dsort = dsort
+  let dpsort = dpsort
+  let dpperm = dpperm
+  let d1merg = d1merg
+end
+
+(* ---- The OCaml surface ---- *)
+
+let sort ?(desc = false) ?carry dx =
+  let n = Array.length dx in
+  if n > 0 then
+    match carry with
+    | None -> dsort dx [||] n (if desc then Decreasing else Increasing)
+    | Some dy ->
+      if Array.length dy < n then
+        invalid_arg "Sort.sort: the carried array is shorter than the keys";
+      dsort dx dy n (if desc then Decreasing_carry else Increasing_carry)
+
+let sort_index ?(desc = false) dx =
+  let n = Array.length dx in
+  if n = 0 then [||]
+  else begin
+    let iperm = Array.make n 0 in
+    dpsort dx n iperm (if desc then Decreasing else Increasing);
+    iperm
+  end
+
+let permute dx iperm =
+  let n = Array.length dx in
+  if Array.length iperm <> n then
+    invalid_arg "Sort.permute: the permutation is not as long as the array";
+  if n > 0 then dpperm dx n iperm
+
+let merge a b =
+  let m1 = Array.length a and m2 = Array.length b in
+  let t = Array.make (max 1 (2 * (m1 + m2))) 0.0 in
+  Array.blit a 0 t 0 m1;
+  Array.blit b 0 t m1 m2;
+  d1merg t 0 m1 m1 m2 (m1 + m2);
+  Array.sub t (m1 + m2) (m1 + m2)

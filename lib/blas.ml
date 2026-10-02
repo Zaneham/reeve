@@ -1,7 +1,9 @@
 (* Reeve, Copyright 2026 Zane Hambly.
    BLAS level 1, ported from the reference Fortran. A vector is a
    [float array], a base offset and an increment, and a negative increment
-   walks the vector backwards from its far end as it does in the Fortran. *)
+   walks the vector backwards from its far end as it does in the Fortran.
+   Those shapes are also re-exported as Raw, with an OCaml surface over whole
+   arrays under it. *)
 
 open Mach
 
@@ -200,3 +202,58 @@ let idamax n dx xo incx =
     done;
     !l
   end
+
+module Raw = struct
+  let daxpy = daxpy
+  let dscal = dscal
+  let dcopy = dcopy
+  let dswap = dswap
+  let drot = drot
+  let drotg = drotg
+  let ddot = ddot
+  let dasum = dasum
+  let dnrm2 = dnrm2
+  let idamax = idamax
+end
+
+(* ---- The OCaml surface ---- *)
+
+let count name inc len =
+  if inc < 1 then
+    invalid_arg (name ^ ": the increment has to be positive");
+  (len + inc - 1) / inc
+
+let pair name incx x incy y =
+  let nx = count name incx (Array.length x) in
+  let ny = count name incy (Array.length y) in
+  if nx <> ny then
+    invalid_arg (name ^ ": the vectors disagree on the number of elements");
+  nx
+
+let axpy ?(incx = 1) ?(incy = 1) alpha x y =
+  daxpy (pair "Blas.axpy" incx x incy y) alpha x 0 incx y 0 incy
+
+let dot ?(incx = 1) ?(incy = 1) x y =
+  ddot (pair "Blas.dot" incx x incy y) x 0 incx y 0 incy
+
+let nrm2 ?(inc = 1) x = dnrm2 (count "Blas.nrm2" inc (Array.length x)) x 0 inc
+let asum ?(inc = 1) x = dasum (count "Blas.asum" inc (Array.length x)) x 0 inc
+
+let scal ?(inc = 1) alpha x =
+  dscal (count "Blas.scal" inc (Array.length x)) alpha x 0 inc
+
+let copy ?(incx = 1) ?(incy = 1) x y =
+  dcopy (pair "Blas.copy" incx x incy y) x 0 incx y 0 incy
+
+let swap ?(incx = 1) ?(incy = 1) x y =
+  dswap (pair "Blas.swap" incx x incy y) x 0 incx y 0 incy
+
+let rot ?(incx = 1) ?(incy = 1) x y c s =
+  drot (pair "Blas.rot" incx x incy y) x 0 incx y 0 incy c s
+
+let rotg = drotg
+
+let iamax ?(inc = 1) x =
+  let n = count "Blas.iamax" inc (Array.length x) in
+  if n < 1 then invalid_arg "Blas.iamax: the vector is empty";
+  idamax n x 0 inc

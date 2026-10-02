@@ -4,6 +4,10 @@
    and from exact arithmetic. *)
 
 open Reeve.Laux
+open Reeve.Laux.Raw
+
+module L = Reeve.Laux
+module M = Reeve.Mat
 
 let tol = 1.0e-10
 let bad = ref 0
@@ -601,6 +605,71 @@ let l3_ilaenv_tall_skinny () =
   info_is "l3 ilaenv dgghd3 min" (ilaenv 2 "DGGHD3" "" 64 64 0 0) 2;
   info_is "l3 ilaenv dgghd3 crossover" (ilaenv 3 "DGGHD3" "" 64 64 0 0) 128
 
+let s_scalars () =
+  near "s lamch eps" (L.lamch Eps) (dlamch Eps);
+  near "s lamch safe min" (L.lamch Safe_min) (dlamch Safe_min);
+  near "s lapy2" (L.lapy2 3.0 4.0) 5.0;
+  near "s lapy3" (L.lapy3 1.0 2.0 2.0) 3.0;
+  check "s isnan" (L.isnan Float.nan);
+  check "s isnan finite" (not (L.isnan 1.0))
+
+let s_swap_rows () =
+  let rows = [| [| 1.0; 2.0 |]; [| 3.0; 4.0 |]; [| 5.0; 6.0 |] |] in
+  let a = M.of_array 3 2 (mat rows) in
+  let b = mat rows in
+  let ipiv = [| 2; 1; 2 |] in
+  L.swap_rows a ipiv;
+  dlaswp 2 b 0 3 0 2 ipiv 0 1;
+  same "s swap_rows forward" (M.data a) b;
+  L.swap_rows ~reverse:true a ipiv;
+  same "s swap_rows undone" (M.data a) (mat rows)
+
+let s_fill () =
+  let a = M.create 3 3 in
+  L.fill ~diag:1.0 a 0.0;
+  for i = 0 to 2 do
+    for j = 0 to 2 do
+      near
+        (Printf.sprintf "s fill identity %d %d" i j)
+        (M.get a i j)
+        (if i = j then 1.0 else 0.0)
+    done
+  done;
+  let b = M.init 3 3 (fun i j -> float_of_int ((i * 3) + j + 1)) in
+  L.fill ~part:Upper b 0.0;
+  near "s fill upper diagonal" (M.get b 0 0) 0.0;
+  near "s fill upper off diagonal" (M.get b 0 1) 0.0;
+  near "s fill lower untouched" (M.get b 2 0) 7.0
+
+let s_copy () =
+  let src = M.init 3 2 (fun i j -> float_of_int ((i * 2) + j + 1)) in
+  let dst = M.create 3 2 in
+  L.copy src dst;
+  same "s copy full" (M.data dst) (M.data src);
+  let up = M.create 3 2 in
+  L.copy ~part:Upper src up;
+  near "s copy upper kept" (M.get up 1 1) (M.get src 1 1);
+  near "s copy upper left alone" (M.get up 1 0) 0.0
+
+let s_norm () =
+  let a =
+    M.of_array 2 3 (mat [| [| 1.0; -2.0; 3.0 |]; [| 4.0; 5.0; -6.0 |] |])
+  in
+  let d = M.data a in
+  let w = Array.make 2 0.0 in
+  near "s norm max" (L.norm Max_abs a) (dlange Max_abs 2 3 d 0 2 w);
+  near "s norm one" (L.norm One_norm a) (dlange One_norm 2 3 d 0 2 w);
+  near "s norm inf" (L.norm Inf_norm a) (dlange Inf_norm 2 3 d 0 2 w);
+  near "s norm frobenius" (L.norm Frobenius a) (dlange Frobenius 2 3 d 0 2 w);
+  near "s norm empty" (L.norm One_norm (M.create 0 3)) 0.0
+
+let s_conformance () =
+  let a = M.create 2 2 in
+  raises "s swap_rows too many pivots" (fun () -> L.swap_rows a [| 0; 1; 1 |]);
+  raises "s swap_rows pivot out of range" (fun () -> L.swap_rows a [| 0; 2 |]);
+  raises "s copy row mismatch" (fun () -> L.copy a (M.create 3 2));
+  raises "s copy column mismatch" (fun () -> L.copy a (M.create 2 3))
+
 let () =
   l1_lamch_exact ();
   l1_lamch_relations ();
@@ -648,4 +717,10 @@ let () =
   l3_iparmq_accumulate ();
   l3_ilaenv_dimensions ();
   l3_ilaenv_tall_skinny ();
+  s_scalars ();
+  s_swap_rows ();
+  s_fill ();
+  s_copy ();
+  s_norm ();
+  s_conformance ();
   if !bad = 0 then print_string "laux: all checks passed\n" else exit 1

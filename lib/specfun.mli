@@ -10,17 +10,6 @@ val dbi : float -> float
 (** [dbi x] is the Bairy function Bi(x), the Airy function of the second kind.
     Raises [Invalid_argument] above x = 104.22, where Bi overflows. *)
 
-val dcot : float -> float
-(** [dcot x] is the cotangent of [x] in radians, by argument reduction onto
-    the series for cot. Raises [Invalid_argument] where the result would
-    overflow near zero, and where [x] is too large for the reduction to carry
-    any precision. *)
-
-val dcsevl : float -> float array -> int -> float
-(** [dcsevl x cs n] evaluates the [n] term Chebyshev series [cs] at [x] by the
-    backward recurrence, with [cs.(0)] the constant term. Raises
-    [Invalid_argument] for [x] outside (-1,+1). *)
-
 val dgamln : float -> float
 (** [dgamln z] is the natural logarithm of the Gamma function for [z] > 0, by
     table lookup on the integers 1 to 100 and the asymptotic expansion
@@ -50,3 +39,25 @@ val drf : float -> float -> float -> float
     [Invalid_argument] on a negative argument, when max(x,y,z) exceeds
     max_float/5, when min(x+y,x+z,y+z) falls below 5*min_float, or if the
     duplication iteration hits its bound. *)
+
+(* ---- The Fortran shapes ---- *)
+
+module Raw : sig
+  (** The two kernels the rest of the library is built on. They sit here
+      rather than on the surface because somebody who wants a cotangent or a
+      Chebyshev sum in OCaml would reach for something else; Bessel, Gamma and
+      Expint want these particular ones, and so does the differential in
+      [diff/]. *)
+
+  val dcsevl : float -> float array -> int -> float
+  (** [dcsevl x cs n] evaluates the [n] term Chebyshev series [cs] at [x] by
+      the backward recurrence, with [cs.(0)] the constant term. The coefficient
+      tables here run longer than the [n] any one call asks for, so the count
+      stays an argument. Raises [Invalid_argument] for [x] outside (-1,+1). *)
+
+  val dcot : float -> float
+  (** [dcot x] is the cotangent of [x] in radians, by argument reduction onto
+      the series for cot. Raises [Invalid_argument] where the result would
+      overflow near zero, and where [x] is too large for the reduction to
+      carry any precision. *)
+end

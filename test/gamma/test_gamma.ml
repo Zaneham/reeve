@@ -3,6 +3,9 @@
    polygamma sequence, Kummer's U and the Wigner 3j and 6j coefficients. *)
 
 open Reeve.Gamma
+open Reeve.Gamma.Raw
+
+module G = Reeve.Gamma
 
 let pi = 3.14159265358979323846
 let euler_gamma = 0.5772156649015328606
@@ -658,6 +661,104 @@ let l1_domains () =
   raises "drc6j array too small raises" (fun () ->
       drc6j 6.0 6.0 6.0 6.0 6.0 t 4)
 
+(* ---- The OCaml surface against the Fortran shapes it wraps ---- *)
+
+let surface_psifn () =
+  let m = 6 in
+  let ar = Array.make m 0.0 in
+  let nzr = dpsifn 1.75 2 1 m ar in
+  let a, nz = G.dpsifn 1.75 2 m in
+  exact "surface dpsifn nz" (float_of_int nz) (float_of_int nzr);
+  holds "surface dpsifn length" (Array.length a = m);
+  for j = 0 to m - 1 do
+    exact (Printf.sprintf "surface dpsifn member %d" j) a.(j) ar.(j)
+  done;
+  let sr = Array.make 1 0.0 in
+  ignore (dpsifn 2.0 0 2 1 sr);
+  let s, _ = G.dpsifn ~scaled:true 2.0 0 1 in
+  exact "surface dpsifn scaled" s.(0) sr.(0);
+  let u, _ = G.dpsifn ~scaled:false 2.0 0 1 in
+  rel_t "surface dpsifn unscaled" tol (s.(0) -. u.(0)) (log 2.0);
+  let big = 2000 in
+  let br = Array.make big 0.0 in
+  let nzr = dpsifn 2.0 0 1 big br in
+  let b, nz = G.dpsifn 2.0 0 big in
+  holds "surface dpsifn reports underflow" (nz = nzr && nz > 0 && nz < big);
+  holds "surface dpsifn length under underflow" (Array.length b = big);
+  exact "surface dpsifn tail is zero" b.(big - 1) 0.0;
+  for j = 0 to big - 1 do
+    exact (Printf.sprintf "surface dpsifn long member %d" j) b.(j) br.(j)
+  done;
+  raises "surface dpsifn x non-positive raises" (fun () -> G.dpsifn 0.0 0 1);
+  raises "surface dpsifn n negative raises" (fun () -> G.dpsifn 1.0 (-1) 1);
+  raises "surface dpsifn m raises" (fun () -> G.dpsifn 1.0 0 0)
+
+let surface_wigner () =
+  let w = Array.make 64 0.0 in
+  List.iter
+    (fun (l2, l3, m2, m3) ->
+      let lo, hi = drc3jj l2 l3 m2 m3 w 64 in
+      let c, clo, chi = G.drc3jj l2 l3 m2 m3 in
+      exact "surface drc3jj min" clo lo;
+      exact "surface drc3jj max" chi hi;
+      holds "surface drc3jj length" (Array.length c = steps lo hi);
+      Array.iteri
+        (fun i v ->
+          exact (Printf.sprintf "surface drc3jj member %d" i) v w.(i))
+        c)
+    [
+      (6.0, 4.0, -2.0, 1.0);
+      (2.0, 3.0, 1.0, -1.0);
+      (3.5, 3.5, 1.5, -2.5);
+      (20.0, 17.0, 5.0, 4.0);
+      (0.5, 0.5, 0.5, -0.5);
+      (0.0, 3.0, 0.0, -1.0);
+    ];
+  List.iter
+    (fun (l1, l2, l3, m1) ->
+      let lo, hi = drc3jm l1 l2 l3 m1 w 64 in
+      let c, clo, chi = G.drc3jm l1 l2 l3 m1 in
+      exact "surface drc3jm min" clo lo;
+      exact "surface drc3jm max" chi hi;
+      holds "surface drc3jm length" (Array.length c = steps lo hi);
+      Array.iteri
+        (fun i v ->
+          exact (Printf.sprintf "surface drc3jm member %d" i) v w.(i))
+        c)
+    [
+      (1.0, 1.0, 1.0, 0.0);
+      (2.0, 3.0, 4.0, 1.0);
+      (1.5, 2.0, 2.5, 0.5);
+      (3.5, 3.5, 3.0, -1.5);
+      (2.0, 0.0, 2.0, 1.0);
+    ];
+  List.iter
+    (fun (l2, l3, l4, l5, l6) ->
+      let lo, hi = drc6j l2 l3 l4 l5 l6 w 64 in
+      let c, clo, chi = G.drc6j l2 l3 l4 l5 l6 in
+      exact "surface drc6j min" clo lo;
+      exact "surface drc6j max" chi hi;
+      holds "surface drc6j length" (Array.length c = steps lo hi);
+      Array.iteri
+        (fun i v -> exact (Printf.sprintf "surface drc6j member %d" i) v w.(i))
+        c)
+    [
+      (1.5, 1.5, 1.0, 1.5, 1.5);
+      (2.0, 3.0, 2.0, 3.0, 2.0);
+      (10.0, 9.0, 8.0, 9.0, 10.0);
+      (0.5, 0.5, 1.0, 0.5, 0.5);
+      (0.0, 1.0, 1.0, 1.0, 1.0);
+    ];
+  raises "surface drc3jj l2 below m2 raises" (fun () ->
+      G.drc3jj 1.0 2.0 2.0 0.0);
+  raises "surface drc3jj non integral raises" (fun () ->
+      G.drc3jj 1.3 2.0 0.0 0.0);
+  raises "surface drc3jm triangle raises" (fun () -> G.drc3jm 1.0 1.0 5.0 0.0);
+  raises "surface drc3jm l1 below m1 raises" (fun () ->
+      G.drc3jm 1.0 2.0 2.0 2.0);
+  raises "surface drc6j triangle raises" (fun () ->
+      G.drc6j 1.0 1.0 9.0 1.0 1.0)
+
 let () =
   l1_factorial ();
   l1_limits ();
@@ -678,4 +779,6 @@ let () =
   l2_6j ();
   l3_log_gamma ();
   l3_psi ();
+  surface_psifn ();
+  surface_wigner ();
   if !bad = 0 then print_string "gamma: all checks passed\n" else exit 1

@@ -77,7 +77,7 @@ let rec dgetrf2 m n a ao lda ipiv ipo =
     let info = ref 0 in
     let left = dgetrf2 m n1 a ao lda ipiv ipo in
     if !info = 0 && left > 0 then info := left;
-    Laux.dlaswp n2 a (ao + (n1 * lda)) lda 0 (n1 - 1) ipiv ipo 1;
+    Laux.Raw.dlaswp n2 a (ao + (n1 * lda)) lda 0 (n1 - 1) ipiv ipo 1;
     dtrsm Left Lower No_trans Unit n1 n2 1.0 a ao lda a
       (ao + (n1 * lda)) lda;
     dgemm No_trans No_trans (m - n1) n2 n1 (-1.0) a (ao + n1) lda a
@@ -89,7 +89,7 @@ let rec dgetrf2 m n a ao lda ipiv ipo =
     for i = n1 + 1 to min m n do
       ipiv.(ipo + i - 1) <- ipiv.(ipo + i - 1) + n1
     done;
-    Laux.dlaswp n1 a ao lda n1 (min m n - 1) ipiv ipo 1;
+    Laux.Raw.dlaswp n1 a ao lda n1 (min m n - 1) ipiv ipo 1;
     !info
   end
 
@@ -114,10 +114,10 @@ let dgetrf m n a ao lda ipiv ipo =
         for i = !j to min m (!j + jb - 1) do
           ipiv.(ipo + i - 1) <- !j - 1 + ipiv.(ipo + i - 1)
         done;
-        Laux.dlaswp (!j - 1) a ao lda (!j - 1) (!j + jb - 2) ipiv ipo 1;
+        Laux.Raw.dlaswp (!j - 1) a ao lda (!j - 1) (!j + jb - 2) ipiv ipo 1;
         if !j + jb <= n then begin
           let r = ao + ((!j + jb - 1) * lda) in
-          Laux.dlaswp (n - !j - jb + 1) a r lda (!j - 1) (!j + jb - 2)
+          Laux.Raw.dlaswp (n - !j - jb + 1) a r lda (!j - 1) (!j + jb - 2)
             ipiv ipo 1;
           dtrsm Left Lower No_trans Unit jb (n - !j - jb + 1) 1.0 a d lda a
             (r + !j - 1) lda;
@@ -141,13 +141,13 @@ let dgetrs trans n nrhs a ao lda ipiv ipo b bo ldb =
   else begin
     (match trans with
     | No_trans ->
-      Laux.dlaswp nrhs b bo ldb 0 (n - 1) ipiv ipo 1;
+      Laux.Raw.dlaswp nrhs b bo ldb 0 (n - 1) ipiv ipo 1;
       dtrsm Left Lower No_trans Unit n nrhs 1.0 a ao lda b bo ldb;
       dtrsm Left Upper No_trans Non_unit n nrhs 1.0 a ao lda b bo ldb
     | Trans | Conj_trans ->
       dtrsm Left Upper Trans Non_unit n nrhs 1.0 a ao lda b bo ldb;
       dtrsm Left Lower Trans Unit n nrhs 1.0 a ao lda b bo ldb;
-      Laux.dlaswp nrhs b bo ldb 0 (n - 1) ipiv ipo (-1));
+      Laux.Raw.dlaswp nrhs b bo ldb 0 (n - 1) ipiv ipo (-1));
     0
   end
 
@@ -302,3 +302,63 @@ let dposv uplo n nrhs a ao lda b bo ldb =
     let info = dpotrf uplo n a ao lda in
     if info = 0 then dpotrs uplo n nrhs a ao lda b bo ldb else info
   end
+
+module Raw = struct
+  let dgetf2 = dgetf2
+  let dgetrf2 = dgetrf2
+  let dgetrf = dgetrf
+  let dgetrs = dgetrs
+  let dgesv = dgesv
+  let dpotf2 = dpotf2
+  let dpotrf2 = dpotrf2
+  let dpotrf = dpotrf
+  let dpotrs = dpotrs
+  let dposv = dposv
+end
+
+(* ---- The OCaml surface ---- *)
+
+exception Singular of int
+exception Not_positive_definite of int
+
+let lu a =
+  let k = min (Mat.rows a) (Mat.cols a) in
+  let ipiv = Array.make (max 1 k) 0 in
+  let info = dgetrf (Mat.rows a) (Mat.cols a) (Mat.data a) 0 (Mat.rows a) ipiv 0 in
+  if info > 0 then raise (Singular info);
+  ipiv
+
+let lu_solve ?(trans = false) a ipiv b =
+  Mat.square "lu_solve" a;
+  Mat.same_rows "lu_solve" a b;
+  ignore
+    (dgetrs (if trans then Trans else No_trans) (Mat.rows a) (Mat.cols b) (Mat.data a) 0 (Mat.rows a)
+       ipiv 0 (Mat.data b) 0 (Mat.rows b))
+
+let solve a b =
+  Mat.square "solve" a;
+  Mat.same_rows "solve" a b;
+  let ipiv = Array.make (max 1 (Mat.rows a)) 0 in
+  let info = dgesv (Mat.rows a) (Mat.cols b) (Mat.data a) 0 (Mat.rows a) ipiv 0 (Mat.data b) 0 (Mat.rows b) in
+  if info > 0 then raise (Singular info)
+
+let cholesky ?(upper = true) a =
+  Mat.square "cholesky" a;
+  let info = dpotrf (if upper then Upper else Lower) (Mat.rows a) (Mat.data a) 0 (Mat.rows a) in
+  if info > 0 then raise (Not_positive_definite info)
+
+let cholesky_solve ?(upper = true) a b =
+  Mat.square "cholesky_solve" a;
+  Mat.same_rows "cholesky_solve" a b;
+  ignore
+    (dpotrs (if upper then Upper else Lower) (Mat.rows a) (Mat.cols b) (Mat.data a) 0 (Mat.rows a)
+       (Mat.data b) 0 (Mat.rows b))
+
+let solve_spd ?(upper = true) a b =
+  Mat.square "solve_spd" a;
+  Mat.same_rows "solve_spd" a b;
+  let info =
+    dposv (if upper then Upper else Lower) (Mat.rows a) (Mat.cols b) (Mat.data a) 0 (Mat.rows a)
+      (Mat.data b) 0 (Mat.rows b)
+  in
+  if info > 0 then raise (Not_positive_definite info)

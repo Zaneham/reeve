@@ -5,7 +5,8 @@
    moved with it, and the permutation routines agree with the permutation the
    sort reported. *)
 
-open Reeve.Sort
+open Reeve.Sort.Raw
+module Sort = Reeve.Sort
 
 let bad = ref 0
 
@@ -337,6 +338,71 @@ let merge_random () =
       merge_case (Printf.sprintf "merge random %d %d" m1 m2) (run m1) (run m2))
     [ (1, 1); (1, 9); (9, 1); (5, 5); (17, 3); (3, 17); (40, 40) ]
 
+(* ---- The OCaml surface ---- *)
+
+let surface_sorts () =
+  let a = [| 3.0; -1.0; 2.0; 0.0 |] in
+  Sort.sort a;
+  exact "surface sort up" a [| -1.0; 0.0; 2.0; 3.0 |] 4;
+  Sort.sort ~desc:true a;
+  exact "surface sort down" a [| 3.0; 2.0; 0.0; -1.0 |] 4
+
+let surface_carries () =
+  let a = [| 3.0; 1.0; 2.0 |] and y = [| 30.0; 10.0; 20.0 |] in
+  Sort.sort ~carry:y a;
+  exact "surface carry keys" a [| 1.0; 2.0; 3.0 |] 3;
+  exact "surface carry values" y [| 10.0; 20.0; 30.0 |] 3;
+  let b = [| 1.0; 2.0 |] and z = [| 10.0; 20.0; 99.0 |] in
+  Sort.sort ~desc:true ~carry:z b;
+  exact "surface carry down keys" b [| 2.0; 1.0 |] 2;
+  exact "surface carry down values" z [| 20.0; 10.0; 99.0 |] 3
+
+let surface_indexes () =
+  let a = [| 5.0; 2.0; 9.0; 4.0; 2.0 |] in
+  let keep = Array.copy a in
+  let p = Sort.sort_index a in
+  exact "surface index leaves the keys" a keep 5;
+  is_perm "surface index is a permutation" p 5;
+  let got = Array.map (fun i -> a.(i)) p in
+  ordered "surface index order" true got 5;
+  multiset "surface index multiset" got a 5;
+  let b = Array.copy a in
+  Sort.permute b p;
+  exact "surface permute replays the index" b got 5;
+  let q = Sort.sort_index ~desc:true a in
+  exact "surface index down leaves the keys" a keep 5;
+  ordered "surface index down order" false (Array.map (fun i -> a.(i)) q) 5
+
+let surface_merges () =
+  exact "surface merge interleaved"
+    (Sort.merge [| 1.0; 4.0; 7.0 |] [| 2.0; 3.0; 9.0 |])
+    [| 1.0; 2.0; 3.0; 4.0; 7.0; 9.0 |] 6;
+  exact "surface merge left empty" (Sort.merge [||] [| 1.0; 2.0 |])
+    [| 1.0; 2.0 |] 2;
+  exact "surface merge right empty" (Sort.merge [| 1.0; 2.0 |] [||])
+    [| 1.0; 2.0 |] 2;
+  let m = Sort.merge [| 1.0; 5.0 |] [| 2.0; 3.0; 4.0; 6.0 |] in
+  check "surface merge length" (Array.length m = 6);
+  ordered "surface merge order" true m 6
+
+let surface_empty () =
+  let a = [||] in
+  Sort.sort a;
+  Sort.sort ~desc:true ~carry:[||] a;
+  Sort.permute a [||];
+  check "surface empty index" (Array.length (Sort.sort_index [||]) = 0);
+  check "surface empty merge" (Array.length (Sort.merge [||] [||]) = 0)
+
+let surface_errors () =
+  raises "surface sort short carry" (fun () ->
+      Sort.sort ~carry:[| 1.0 |] [| 1.0; 2.0 |]);
+  raises "surface permute wrong length" (fun () ->
+      Sort.permute [| 1.0; 2.0 |] [| 0 |]);
+  raises "surface permute not a permutation" (fun () ->
+      Sort.permute [| 1.0; 2.0 |] [| 0; 0 |]);
+  raises "surface permute out of range" (fun () ->
+      Sort.permute [| 1.0; 2.0 |] [| 0; 2 |])
+
 let () =
   one ();
   two_up ();
@@ -364,4 +430,10 @@ let () =
   merge_empty ();
   merge_offsets ();
   merge_random ();
+  surface_sorts ();
+  surface_carries ();
+  surface_indexes ();
+  surface_merges ();
+  surface_empty ();
+  surface_errors ();
   if !bad = 0 then print_string "sort: all checks passed\n" else exit 1

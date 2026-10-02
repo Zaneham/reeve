@@ -620,31 +620,31 @@ let k1_xmin = exp (Float.max (log tiny_dp) (-.log huge_dp) +. 0.01)
 
 let dbesi0e x =
   let y = Float.abs x in
-  if y > 8.0 then (0.375 +. Specfun.dcsevl (16.0 /. y -. 1.0) ai02cs ntai02) /. sqrt y
+  if y > 8.0 then (0.375 +. Specfun.Raw.dcsevl (16.0 /. y -. 1.0) ai02cs ntai02) /. sqrt y
   else if y > 3.0 then
-    (0.375 +. Specfun.dcsevl ((48.0 /. y -. 11.0) /. 5.0) ai0cs ntai0) /. sqrt y
+    (0.375 +. Specfun.Raw.dcsevl ((48.0 /. y -. 11.0) /. 5.0) ai0cs ntai0) /. sqrt y
   else if y > i0_xsml then
-    exp (-.y) *. (2.75 +. Specfun.dcsevl (y *. y /. 4.5 -. 1.0) bi0cs nti0)
+    exp (-.y) *. (2.75 +. Specfun.Raw.dcsevl (y *. y /. 4.5 -. 1.0) bi0cs nti0)
   else 1.0 -. x
 
 let dbesi0 x =
   let y = Float.abs x in
   if y > i0_xmax then invalid_arg "dbesi0: abs x so big that i0 overflows"
   else if y > 3.0 then exp y *. dbesi0e x
-  else if y > i0_xsml then 2.75 +. Specfun.dcsevl (y *. y /. 4.5 -. 1.0) bi0cs nti0
+  else if y > i0_xsml then 2.75 +. Specfun.Raw.dcsevl (y *. y /. 4.5 -. 1.0) bi0cs nti0
   else 1.0
 
 let dbesi1e x =
   let y = Float.abs x in
   if y > 3.0 then
     let v =
-      if y <= 8.0 then (0.375 +. Specfun.dcsevl ((48.0 /. y -. 11.0) /. 5.0) ai1cs ntai1) /. sqrt y
-      else (0.375 +. Specfun.dcsevl (16.0 /. y -. 1.0) ai12cs ntai12) /. sqrt y
+      if y <= 8.0 then (0.375 +. Specfun.Raw.dcsevl ((48.0 /. y -. 11.0) /. 5.0) ai1cs ntai1) /. sqrt y
+      else (0.375 +. Specfun.Raw.dcsevl (16.0 /. y -. 1.0) ai12cs ntai12) /. sqrt y
     in
     Float.copy_sign v x
   else if x > i1_xmin then
     let v =
-      if y > i1_xsml then x *. (0.875 +. Specfun.dcsevl (y *. y /. 4.5 -. 1.0) bi1cs nti1)
+      if y > i1_xsml then x *. (0.875 +. Specfun.Raw.dcsevl (y *. y /. 4.5 -. 1.0) bi1cs nti1)
       else 0.5 *. x
     in
     exp (-.y) *. v
@@ -654,7 +654,7 @@ let dbesi1 x =
   let y = Float.abs x in
   if y > i1_xmax then invalid_arg "dbesi1: abs x so big that i1 overflows"
   else if y > 3.0 then exp y *. dbesi1e x
-  else if y > i1_xsml then x *. (0.875 +. Specfun.dcsevl (y *. y /. 4.5 -. 1.0) bi1cs nti1)
+  else if y > i1_xsml then x *. (0.875 +. Specfun.Raw.dcsevl (y *. y /. 4.5 -. 1.0) bi1cs nti1)
   else if y > i1_xmin then 0.5 *. x
   else 0.0
 
@@ -663,16 +663,16 @@ let dbesk0e x =
   else if x <= 2.0 then
     let y = if x > k_xsml then x *. x else 0.0 in
     exp x
-    *. (-.log (0.5 *. x) *. dbesi0 x -. 0.25 +. Specfun.dcsevl (0.5 *. y -. 1.0) bk0cs ntk0)
+    *. (-.log (0.5 *. x) *. dbesi0 x -. 0.25 +. Specfun.Raw.dcsevl (0.5 *. y -. 1.0) bk0cs ntk0)
   else if x <= 8.0 then
-    (1.25 +. Specfun.dcsevl ((16.0 /. x -. 5.0) /. 3.0) ak0cs ntak0) /. sqrt x
-  else (1.25 +. Specfun.dcsevl (16.0 /. x -. 1.0) ak02cs ntak02) /. sqrt x
+    (1.25 +. Specfun.Raw.dcsevl ((16.0 /. x -. 5.0) /. 3.0) ak0cs ntak0) /. sqrt x
+  else (1.25 +. Specfun.Raw.dcsevl (16.0 /. x -. 1.0) ak02cs ntak02) /. sqrt x
 
 let dbesk0 x =
   if x <= 0.0 then invalid_arg "dbesk0: x is zero or negative"
   else if x <= 2.0 then
     let y = if x > k_xsml then x *. x else 0.0 in
-    -.log (0.5 *. x) *. dbesi0 x -. 0.25 +. Specfun.dcsevl (0.5 *. y -. 1.0) bk0cs ntk0
+    -.log (0.5 *. x) *. dbesi0 x -. 0.25 +. Specfun.Raw.dcsevl (0.5 *. y -. 1.0) bk0cs ntk0
   else if x <= k_xmax then exp (-.x) *. dbesk0e x
   else 0.0
 
@@ -683,17 +683,17 @@ let dbesk1e x =
     let y = if x > k_xsml then x *. x else 0.0 in
     exp x
     *. (log (0.5 *. x) *. dbesi1 x
-        +. (0.75 +. Specfun.dcsevl (0.5 *. y -. 1.0) bk1cs ntk1) /. x)
+        +. (0.75 +. Specfun.Raw.dcsevl (0.5 *. y -. 1.0) bk1cs ntk1) /. x)
   else if x <= 8.0 then
-    (1.25 +. Specfun.dcsevl ((16.0 /. x -. 5.0) /. 3.0) ak1cs ntak1) /. sqrt x
-  else (1.25 +. Specfun.dcsevl (16.0 /. x -. 1.0) ak12cs ntak12) /. sqrt x
+    (1.25 +. Specfun.Raw.dcsevl ((16.0 /. x -. 5.0) /. 3.0) ak1cs ntak1) /. sqrt x
+  else (1.25 +. Specfun.Raw.dcsevl (16.0 /. x -. 1.0) ak12cs ntak12) /. sqrt x
 
 let dbesk1 x =
   if x <= 0.0 then invalid_arg "dbesk1: x is zero or negative"
   else if x < k1_xmin then invalid_arg "dbesk1: x so small that k1 overflows"
   else if x <= 2.0 then
     let y = if x > k_xsml then x *. x else 0.0 in
-    log (0.5 *. x) *. dbesi1 x +. (0.75 +. Specfun.dcsevl (0.5 *. y -. 1.0) bk1cs ntk1) /. x
+    log (0.5 *. x) *. dbesi1 x +. (0.75 +. Specfun.Raw.dcsevl (0.5 *. y -. 1.0) bk1cs ntk1) /. x
   else if x <= k_xmax then exp (-.x) *. dbesk1e x
   else 0.0
 let jair_n1 = 14
@@ -2346,3 +2346,26 @@ let dbesj x alpha n y =
       end
     end
   end
+
+module Raw = struct
+  let dbesi = dbesi
+  let dbesj = dbesj
+  let dbesk = dbesk
+end
+
+(* ---- The OCaml surface ---- *)
+
+let dbesi ?(scaled = false) x alpha n =
+  let y = Array.make (max 1 n) 0.0 in
+  let nz = Raw.dbesi x alpha (if scaled then 2 else 1) n y in
+  (y, nz)
+
+let dbesj x alpha n =
+  let y = Array.make (max 1 n) 0.0 in
+  let nz = Raw.dbesj x alpha n y in
+  (y, nz)
+
+let dbesk ?(scaled = false) x fnu n =
+  let y = Array.make (max 1 n) 0.0 in
+  let nz = Raw.dbesk x fnu (if scaled then 2 else 1) n y in
+  (y, nz)

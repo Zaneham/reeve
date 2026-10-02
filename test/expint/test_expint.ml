@@ -4,6 +4,7 @@
    elementary kernels. *)
 
 open Reeve.Expint
+open Reeve.Expint.Raw
 
 let pi = 3.14159265358979323846
 let ln2 = 0.69314718055994530942
@@ -317,6 +318,57 @@ let l1_domains () =
   raises "dexint x zero with n one raises" (fun () ->
       dexint 0.0 1 1 4 1.0e-14 en)
 
+(* ---- The OCaml surface ---- *)
+
+let surface () =
+  let e = sequence ~n:1 ~count:4 1.0 in
+  holds "surface sequence length" (Array.length e = 4);
+  rel_t "surface sequence against de1" tol e.(0) (de1 1.0);
+  rel_t "surface sequence 1 n1 2" hist_tol e.(1) 1.48495506775921826e-01;
+  rel_t "surface sequence 1 n1 3" hist_tol e.(2) 1.09691967197760254e-01;
+  rel_t "surface sequence 1 n1 4" hist_tol e.(3) 8.60624913245606887e-02;
+  let raw = Array.make 3 0.0 in
+  let nz = dexint 5.0 2 1 3 1.0e-14 raw in
+  holds "surface raw no underflow at 5" (nz = 0);
+  let s = sequence ~tol:1.0e-14 ~n:2 ~count:3 5.0 in
+  holds "surface agrees with raw bit for bit"
+    (Int64.bits_of_float s.(0) = Int64.bits_of_float raw.(0)
+    && Int64.bits_of_float s.(1) = Int64.bits_of_float raw.(1)
+    && Int64.bits_of_float s.(2) = Int64.bits_of_float raw.(2));
+  let u = sequence ~tol:1.0e-14 ~n:1 ~count:3 4.0 in
+  let k = sequence ~tol:1.0e-14 ~scaling:Exp_scaled ~n:1 ~count:3 4.0 in
+  for i = 0 to 2 do
+    rel_t
+      (Printf.sprintf "surface exp scaled %d" i)
+      1.0e-14 k.(i)
+      (u.(i) *. exp 4.0)
+  done;
+  let z = sequence ~n:1 ~count:3 705.0 in
+  holds "surface underflow is all zeros"
+    (z.(0) = 0.0 && z.(1) = 0.0 && z.(2) = 0.0);
+  let z0 = sequence ~n:2 ~count:4 0.0 in
+  for i = 0 to 3 do
+    near
+      (Printf.sprintf "surface at zero %d" i)
+      z0.(i)
+      (1.0 /. float_of_int (i + 1))
+  done;
+  let one = sequence ~n:3 ~count:1 0.25 in
+  holds "surface count one" (Array.length one = 1);
+  rel_t "surface count one value" tol one.(0)
+    (let en = Array.make 1 0.0 in
+     ignore (dexint 0.25 3 1 1 1.0e-14 en);
+     en.(0));
+  raises "surface negative x raises" (fun () -> sequence ~n:1 ~count:4 (-1.0));
+  raises "surface n zero raises" (fun () -> sequence ~n:0 ~count:4 1.0);
+  raises "surface count zero raises" (fun () -> sequence ~n:1 ~count:0 1.0);
+  raises "surface loose tol raises" (fun () ->
+      sequence ~tol:0.5 ~n:1 ~count:4 1.0);
+  raises "surface tight tol raises" (fun () ->
+      sequence ~tol:1.0e-20 ~n:1 ~count:4 1.0);
+  raises "surface x zero with n one raises" (fun () ->
+      sequence ~n:1 ~count:4 0.0)
+
 let () =
   l1_expint ();
   l1_others ();
@@ -331,4 +383,5 @@ let () =
   l3_expint ();
   l3_others ();
   l3_sequence ();
+  surface ();
   if !bad = 0 then print_string "expint: all checks passed\n" else exit 1

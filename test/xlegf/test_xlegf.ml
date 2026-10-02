@@ -3,6 +3,7 @@
    the Legendre functions of the first and second kind built on it. *)
 
 open Reeve.Xlegf
+open Reeve.Xlegf.Raw
 
 let pi = 3.14159265358979323846
 let env = dxset 0 0 0.0 0
@@ -436,6 +437,75 @@ let l1_degenerate_vectors () =
   holds "l1 normalised P vanishes above the degree over mu"
     (p.(0).x <> 0.0 && p.(1).x <> 0.0 && p.(2).x = 0.0 && p.(3).x = 0.0)
 
+(* ---- The OCaml surface ---- *)
+
+let surface () =
+  let th = pi /. 3.0 in
+  let a = legendre_orders env Ppos ~nu:2.0 ~mu1:0 ~mu2:2 ~theta:th in
+  let b = dxlegf env 2.0 0 0 2 th Ppos in
+  holds "surface orders length" (Array.length a = 3);
+  for i = 0 to 2 do
+    same (Printf.sprintf "surface orders matches dxlegf %d" i) a.(i) b.(i)
+  done;
+  let c = legendre_degrees env Pneg ~nu1:0.5 ~count:4 ~mu:1 ~theta:th in
+  let d = dxlegf env 0.5 3 1 1 th Pneg in
+  holds "surface degrees length" (Array.length c = 4);
+  for i = 0 to 3 do
+    same (Printf.sprintf "surface degrees matches dxlegf %d" i) c.(i) d.(i)
+  done;
+  let one = legendre_degrees env Q ~nu1:1.0 ~count:1 ~mu:0 ~theta:th in
+  holds "surface degrees count one" (Array.length one = 1);
+  same "surface degrees count one value" one.(0)
+    (dxlegf env 1.0 0 0 0 th Q).(0);
+  raises "surface degrees count zero raises" (fun () ->
+      ignore (legendre_degrees env Q ~nu1:1.0 ~count:0 ~mu:0 ~theta:th));
+  raises "surface orders mu2 below mu1 raises" (fun () ->
+      ignore (legendre_orders env Q ~nu:1.0 ~mu1:2 ~mu2:1 ~theta:th));
+  raises "surface orders theta out of range raises" (fun () ->
+      ignore (legendre_orders env Q ~nu:1.0 ~mu1:0 ~mu2:1 ~theta:0.0));
+  (match to_float env { x = 3.0; ix = 0 } with
+  | Some v -> holds "surface to_float of a plain number" (v = 3.0)
+  | None -> fail "surface to_float of a plain number");
+  (match to_float env { x = 1.0; ix = 10 } with
+  | Some v -> holds "surface to_float folds the index in" (v = 1024.0)
+  | None -> fail "surface to_float folds the index in");
+  (match to_float env { x = 1.0; ix = 5000 } with
+  | Some _ -> fail "surface to_float gives up out of range"
+  | None -> ());
+  Array.iteri
+    (fun i e ->
+      match to_float env e with
+      | Some v ->
+        holds (Printf.sprintf "surface to_float on a legf value %d" i) (v = e.x)
+      | None -> fail (Printf.sprintf "surface to_float on a legf value %d" i))
+    a
+
+let surface_nrmp () =
+  let th = 0.9 in
+  let a, sa = normalised_orders env By_x ~nu:12 ~mu1:0 ~mu2:12 ~arg:(cos th) in
+  let b, sb = dxnrmp env 12 0 12 (cos th) By_x in
+  holds "surface nrmp length" (Array.length a = 13);
+  holds "surface nrmp digit loss matches dxnrmp" (sa = sb);
+  Array.iteri
+    (fun i v ->
+      same (Printf.sprintf "surface nrmp matches dxnrmp %d" i) v b.(i))
+    a;
+  let c, _ = normalised_orders env By_theta ~nu:12 ~mu1:0 ~mu2:12 ~arg:th in
+  Array.iteri
+    (fun i v ->
+      rel_t (Printf.sprintf "surface nrmp reads an angle %d" i) 1.0e-14 v.x
+        a.(i).x)
+    c;
+  let d, isig = normalised_orders env By_x ~nu:5 ~mu1:0 ~mu2:0 ~arg:1.0 in
+  rel_t "surface nrmp at x = 1" tol d.(0).x (sqrt 5.5);
+  holds "surface nrmp digit loss at x = 1" (isig = 1);
+  raises "surface nrmp negative degree raises" (fun () ->
+      ignore (normalised_orders env By_x ~nu:(-1) ~mu1:0 ~mu2:0 ~arg:0.5));
+  raises "surface nrmp mu2 below mu1 raises" (fun () ->
+      ignore (normalised_orders env By_x ~nu:2 ~mu1:3 ~mu2:2 ~arg:0.5));
+  raises "surface nrmp argument out of range raises" (fun () ->
+      ignore (normalised_orders env By_x ~nu:2 ~mu1:0 ~mu2:0 ~arg:1.5))
+
 let () =
   l1_roundtrip ();
   l1_zero ();
@@ -457,4 +527,6 @@ let () =
   l3_nu_wise_against_mu_wise ();
   l3_extended_indices ();
   l3_nrmp_against_legf ();
+  surface ();
+  surface_nrmp ();
   if !bad = 0 then print_string "xlegf: all checks passed\n" else exit 1

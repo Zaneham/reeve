@@ -4,7 +4,8 @@
    diff_integ suites; the rest are closed forms, or polynomials inside the
    degree each rule integrates exactly, so no reference number is needed. *)
 
-open Reeve.Quad
+open Reeve.Quad.Raw
+module Quad = Reeve.Quad
 
 let bad = ref 0
 
@@ -394,6 +395,107 @@ let pfqad_bad_arguments () =
   rejects "dpfqad rejects tol below the unit roundoff" (fun () ->
       dpfqad (fun _ -> 1.0) 2 pp_two_pieces pp_two_breaks 2 2 0 0.0 2.0 1.0e-20)
 
+(* ---- The OCaml surface ---- *)
+
+let estimate what (r : Quad.result) =
+  match r.Quad.error with
+  | Some e -> e
+  | None ->
+    fail (what ^ " gave no error estimate");
+    0.0
+
+let surface_gauss8 () =
+  let r = Quad.gauss8 (fun x -> x *. x) 0.0 1.0 in
+  near_t 1.0e-12 "surface gauss8 x^2" r.Quad.value (1.0 /. 3.0);
+  check "surface gauss8 converged" r.Quad.converged;
+  let e = estimate "surface gauss8 x^2" r in
+  check "surface gauss8 error estimate is not negative" (e >= 0.0);
+  check "surface gauss8 error estimate bounds the true error"
+    (Float.abs (r.Quad.value -. (1.0 /. 3.0)) <= e +. 1.0e-14);
+  let r = Quad.gauss8 ~tol:1.0e-12 (fun x -> 1.0 /. x) 1.0 10.0 in
+  near_t 1.0e-10 "surface gauss8 1/x" r.Quad.value (log 10.0);
+  check "surface gauss8 1/x converged" r.Quad.converged
+
+let surface_gauss8_reversed () =
+  let f x = sin x in
+  let up = Quad.gauss8 f 0.0 pi and down = Quad.gauss8 f pi 0.0 in
+  near_t 1.0e-12 "surface gauss8 sin over 0 pi" up.Quad.value 2.0;
+  near_t 1.0e-12 "surface gauss8 reversed negates" down.Quad.value (-2.0)
+
+let surface_gauss8_no_width () =
+  let r = Quad.gauss8 (fun x -> exp x) 3.0 3.0 in
+  check "surface gauss8 no width is zero" (r.Quad.value = 0.0);
+  check "surface gauss8 no width converged" r.Quad.converged
+
+let surface_gauss8_does_not_converge () =
+  let r = Quad.gauss8 ~tol:1.0e-14 (fun x -> 1.0 /. sqrt x) 1.0e-12 1.0 in
+  check "surface gauss8 reports the tolerance missed"
+    (not r.Quad.converged);
+  check "surface gauss8 still hands back a value"
+    (Float.abs (r.Quad.value -. 2.0) < 1.0e-3);
+  check "surface gauss8 owns up to how far off it is"
+    (estimate "surface gauss8 unconverged" r > 1.0e-12)
+
+let surface_gauss8_too_narrow () =
+  let narrow what a b =
+    match Quad.gauss8 (fun x -> x) a b with
+    | _ -> fail what
+    | exception Quad.Too_narrow (ra, rb) ->
+      if ra <> a || rb <> b then fail (what ^ " reported the wrong limits")
+  in
+  narrow "surface gauss8 too narrow" 1.0 (1.0 +. 1.0e-15);
+  narrow "surface gauss8 too narrow negative" (-1.0) (-1.0 -. 1.0e-15)
+
+let surface_newton_cotes7 () =
+  let r = Quad.newton_cotes7 ~tol:1.0e-13 (fun x -> 1.0 /. x) 1.0 10.0 in
+  near_t 1.0e-11 "surface nc7 1/x" r.Quad.value (log 10.0);
+  check "surface nc7 converged" r.Quad.converged;
+  check "surface nc7 gives no error estimate" (r.Quad.error = None);
+  let r = Quad.newton_cotes7 (fun x -> x *. x *. x) 0.0 2.0 in
+  near_t 1.0e-12 "surface nc7 x^3" r.Quad.value 4.0;
+  let r = Quad.newton_cotes7 (fun x -> exp x) 2.0 2.0 in
+  check "surface nc7 no width is zero" (r.Quad.value = 0.0);
+  check "surface nc7 no width converged" r.Quad.converged;
+  (match Quad.newton_cotes7 (fun x -> x) 1.0 (1.0 +. 1.0e-15) with
+  | _ -> fail "surface nc7 too narrow"
+  | exception Quad.Too_narrow (_, _) -> ())
+
+let surface_rules_agree () =
+  let f x = exp (-.(x *. x)) in
+  let g = Quad.gauss8 f 0.0 2.0 and n = Quad.newton_cotes7 f 0.0 2.0 in
+  near_t 1.0e-11 "surface the two rules agree" g.Quad.value n.Quad.value
+
+let surface_table () =
+  let x = Array.init 21 (fun i -> float_of_int i /. 20.0) in
+  let y = Array.map (fun t -> t *. t *. t) x in
+  near_t 1.0e-12 "surface table of x^3" (Quad.integrate_table x y 0.0 1.0) 0.25;
+  near_t 1.0e-12 "surface table over part of the range"
+    (Quad.integrate_table x y 0.25 0.75)
+    ((0.75 ** 4.0 /. 4.0) -. (0.25 ** 4.0 /. 4.0));
+  check "surface table over no width"
+    (Quad.integrate_table x y 0.5 0.5 = 0.0);
+  near_t 1.0e-12 "surface table of two points by trapezoid"
+    (Quad.integrate_table [| 0.0; 2.0 |] [| 1.0; 3.0 |] 0.0 2.0)
+    4.0
+
+let surface_table_errors () =
+  let x = [| 0.0; 1.0; 2.0; 3.0 |] and y = [| 0.0; 1.0; 2.0; 3.0 |] in
+  let rejects what f =
+    match f () with
+    | _ -> fail what
+    | exception Invalid_argument _ -> ()
+  in
+  rejects "surface table rejects one point" (fun () ->
+      Quad.integrate_table [| 1.0 |] [| 1.0 |] 0.0 1.0);
+  rejects "surface table rejects fewer values than abscissas" (fun () ->
+      Quad.integrate_table x [| 0.0; 1.0 |] 0.0 1.0);
+  rejects "surface table rejects reversed limits" (fun () ->
+      Quad.integrate_table x y 2.0 1.0);
+  rejects "surface table rejects abscissas that do not increase" (fun () ->
+      Quad.integrate_table [| 0.0; 2.0; 1.0; 3.0 |] y 0.0 3.0);
+  rejects "surface table rejects too few abscissas between the limits"
+    (fun () -> Quad.integrate_table x y 1.1 1.9)
+
 let () =
   l1_gaus8_x_squared ();
   l1_gaus8_sin ();
@@ -439,4 +541,13 @@ let () =
   pfqad_matches_dppgq8_on_one_piece ();
   pfqad_derivative_is_a_difference ();
   pfqad_bad_arguments ();
+  surface_gauss8 ();
+  surface_gauss8_reversed ();
+  surface_gauss8_no_width ();
+  surface_gauss8_does_not_converge ();
+  surface_gauss8_too_narrow ();
+  surface_newton_cotes7 ();
+  surface_rules_agree ();
+  surface_table ();
+  surface_table_errors ();
   if !bad = 0 then print_string "quad: all checks passed\n" else exit 1

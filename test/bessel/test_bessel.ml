@@ -3,6 +3,9 @@
    expected values taken from the slatec-modern Fortran test suites. *)
 
 open Reeve.Bessel
+open Reeve.Bessel.Raw
+
+module B = Reeve.Bessel
 
 let bad = ref 0
 
@@ -24,6 +27,8 @@ let raises what f =
   match f () with
   | _ -> fail what
   | exception Invalid_argument _ -> ()
+
+let same what a b = if not (a = b) then fail what
 
 (* ---- Level 1, regression against the stored SLATEC sequence values ---- *)
 
@@ -283,6 +288,100 @@ let domains () =
   raises "dbesk1 x <= 0" (fun () -> dbesk1 0.0);
   raises "dbesk1e x <= 0" (fun () -> dbesk1e (-1.0))
 
+(* ---- The OCaml surface against the Fortran shapes it wraps ---- *)
+
+let surface_j () =
+  List.iter
+    (fun (x, alpha, n) ->
+      let yr = Array.make n 0.0 in
+      let nzr = dbesj x alpha n yr in
+      let y, nz = B.dbesj x alpha n in
+      same "surface dbesj nz" nz nzr;
+      same "surface dbesj length" (Array.length y) n;
+      Array.iteri
+        (fun i v -> same (Printf.sprintf "surface dbesj member %d" i) v yr.(i))
+        y)
+    [
+      (1.0, 0.0, 5);
+      (0.5, 0.25, 3);
+      (30.0, 0.0, 8);
+      (0.0, 0.0, 4);
+      (0.0, 2.5, 3);
+      (12.5, 1.5, 20);
+      (1.0, 0.0, 400);
+    ];
+  let y, nz = B.dbesj 1.0 0.0 400 in
+  if not (nz > 0 && nz < 400) then fail "surface dbesj reports underflow";
+  same "surface dbesj zeroes the tail" y.(399) 0.0;
+  if y.(0) = 0.0 then fail "surface dbesj keeps the head";
+  raises "surface dbesj n < 1" (fun () -> B.dbesj 1.0 0.0 0);
+  raises "surface dbesj x < 0" (fun () -> B.dbesj (-1.0) 0.0 1);
+  raises "surface dbesj alpha < 0" (fun () -> B.dbesj 1.0 (-1.0) 1)
+
+let surface_i () =
+  List.iter
+    (fun (x, alpha, n, scaled) ->
+      let yr = Array.make n 0.0 in
+      let nzr = dbesi x alpha (if scaled then 2 else 1) n yr in
+      let y, nz = B.dbesi ~scaled x alpha n in
+      same "surface dbesi nz" nz nzr;
+      same "surface dbesi length" (Array.length y) n;
+      Array.iteri
+        (fun i v -> same (Printf.sprintf "surface dbesi member %d" i) v yr.(i))
+        y)
+    [
+      (1.0, 0.0, 5, false);
+      (1.0, 0.0, 5, true);
+      (0.5, 0.25, 3, false);
+      (0.0, 0.0, 4, false);
+      (40.0, 0.0, 6, true);
+      (1000.0, 0.0, 6, true);
+      (1.0, 0.0, 400, false);
+    ];
+  let y, _ = B.dbesi 1.0 0.0 5 in
+  let d, _ = B.dbesi ~scaled:true 1.0 0.0 5 in
+  Array.iteri
+    (fun i v ->
+      close (Printf.sprintf "surface dbesi scaling %d" i) 1.0e-13
+        (v *. exp (-1.0)) d.(i))
+    y;
+  raises "surface dbesi n < 1" (fun () -> B.dbesi 1.0 0.0 0);
+  raises "surface dbesi x < 0" (fun () -> B.dbesi (-1.0) 0.0 1);
+  raises "surface dbesi overflow unscaled" (fun () -> B.dbesi 1000.0 0.0 1)
+
+let surface_k () =
+  List.iter
+    (fun (x, fnu, n, scaled) ->
+      let yr = Array.make n 0.0 in
+      let nzr = dbesk x fnu (if scaled then 2 else 1) n yr in
+      let y, nz = B.dbesk ~scaled x fnu n in
+      same "surface dbesk nz" nz nzr;
+      same "surface dbesk length" (Array.length y) n;
+      Array.iteri
+        (fun i v -> same (Printf.sprintf "surface dbesk member %d" i) v yr.(i))
+        y)
+    [
+      (1.0, 0.0, 5, false);
+      (1.0, 0.0, 5, true);
+      (0.5, 0.25, 3, false);
+      (25.0, 1.5, 6, true);
+      (700.0, 0.0, 4, false);
+      (1000.0, 0.0, 4, false);
+    ];
+  let y, nz = B.dbesk 1000.0 0.0 4 in
+  if not (nz > 0) then fail "surface dbesk reports underflow";
+  same "surface dbesk zeroes the head" y.(0) 0.0;
+  let y, _ = B.dbesk 1.0 0.0 5 in
+  let d, _ = B.dbesk ~scaled:true 1.0 0.0 5 in
+  Array.iteri
+    (fun i v ->
+      close (Printf.sprintf "surface dbesk scaling %d" i) 1.0e-13
+        (v *. exp 1.0) d.(i))
+    y;
+  raises "surface dbesk n < 1" (fun () -> B.dbesk 1.0 0.0 0);
+  raises "surface dbesk x <= 0" (fun () -> B.dbesk 0.0 0.0 1);
+  raises "surface dbesk fnu < 0" (fun () -> B.dbesk 1.0 (-1.0) 1)
+
 let () =
   l1_dbesi ();
   l1_dbesj ();
@@ -302,4 +401,7 @@ let () =
   large_argument ();
   fixed_order ();
   domains ();
+  surface_j ();
+  surface_i ();
+  surface_k ();
   if !bad = 0 then print_string "bessel: all checks passed\n" else exit 1

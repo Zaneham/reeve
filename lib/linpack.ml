@@ -1,6 +1,8 @@
 (* Reeve, Copyright 2026 Zane Hambly.
-   LINPACK, ported from the SLATEC double precision routines. Matrices are
-   column major and an element (i, j) zero based lives at i + j * lda. *)
+   LINPACK, ported from the SLATEC double precision routines. In the Fortran
+   shapes matrices are column major and an element (i, j) zero based lives at
+   i + j * lda. The OCaml surface at the bottom takes a Mat.t, allocates its
+   own pivots and workspace, and raises instead of returning info. *)
 
 let dgefa a lda n ipvt =
   let info = ref 0 in
@@ -367,3 +369,150 @@ let dpbsl abd lda n m b =
     done;
     b.(k - 1) <- (b.(k - 1) -. !t) /. abd.(m + ((k - 1) * lda))
   done
+
+module Raw = struct
+  let dgefa = dgefa
+  let dgesl = dgesl
+  let dgeco = dgeco
+  let dgbfa = dgbfa
+  let dgbsl = dgbsl
+  let dpofa = dpofa
+  let dposl = dposl
+  let dpbfa = dpbfa
+  let dpbsl = dpbsl
+end
+
+(* ---- The OCaml surface ---- *)
+
+exception Singular of int
+exception Not_positive_definite of int
+
+let columns b f =
+  let n = Mat.rows b and d = Mat.data b in
+  for j = 0 to Mat.cols b - 1 do
+    let col = Array.sub d (j * n) n in
+    f col;
+    Array.blit col 0 d (j * n) n
+  done
+
+let rhs name n b =
+  if Mat.rows b <> n then
+    invalid_arg (name ^ ": right hand side disagrees with the order")
+
+let pivots name n ipvt =
+  if Array.length ipvt < n then
+    invalid_arg (name ^ ": pivot vector is shorter than the order");
+  for k = 0 to n - 1 do
+    if ipvt.(k) < 0 || ipvt.(k) >= n then
+      invalid_arg (name ^ ": pivot is not a row of the matrix")
+  done
+
+let band name ml mu abd =
+  if ml < 0 || mu < 0 then invalid_arg (name ^ ": negative bandwidth");
+  let n = Mat.cols abd in
+  if n > 0 && (ml >= n || mu >= n) then
+    invalid_arg (name ^ ": bandwidth is not smaller than the order");
+  if Mat.rows abd < (2 * ml) + mu + 1 then
+    invalid_arg (name ^ ": band storage has too few rows");
+  n
+
+let spd_band name mu abd =
+  if mu < 0 then invalid_arg (name ^ ": negative bandwidth");
+  let n = Mat.cols abd in
+  if n > 0 && mu >= n then
+    invalid_arg (name ^ ": bandwidth is not smaller than the order");
+  if Mat.rows abd < mu + 1 then
+    invalid_arg (name ^ ": band storage has too few rows");
+  n
+
+let lu a =
+  Mat.square "Linpack.lu" a;
+  let n = Mat.rows a in
+  let ipvt = Array.make (max 1 n) 0 in
+  let info = dgefa (Mat.data a) n n ipvt in
+  if info > 0 then raise (Singular info);
+  ipvt
+
+let lu_solve ?(trans = false) a ipvt b =
+  Mat.square "Linpack.lu_solve" a;
+  Mat.same_rows "Linpack.lu_solve" a b;
+  let n = Mat.rows a in
+  pivots "Linpack.lu_solve" n ipvt;
+  let job = if trans then 1 else 0 in
+  columns b (fun col -> dgesl (Mat.data a) n n ipvt col job)
+
+let solve a b =
+  Mat.square "Linpack.solve" a;
+  Mat.same_rows "Linpack.solve" a b;
+  let n = Mat.rows a in
+  let ipvt = Array.make (max 1 n) 0 in
+  let info = dgefa (Mat.data a) n n ipvt in
+  if info > 0 then raise (Singular info);
+  columns b (fun col -> dgesl (Mat.data a) n n ipvt col 0)
+
+let lu_rcond a =
+  Mat.square "Linpack.lu_rcond" a;
+  let n = Mat.rows a in
+  let ipvt = Array.make (max 1 n) 0 in
+  let z = Array.make (max 1 n) 0.0 in
+  (ipvt, dgeco (Mat.data a) n n ipvt z)
+
+let band_lu ~ml ~mu abd =
+  let n = band "Linpack.band_lu" ml mu abd in
+  let ipvt = Array.make (max 1 n) 0 in
+  let info = dgbfa (Mat.data abd) (Mat.rows abd) n ml mu ipvt in
+  if info > 0 then raise (Singular info);
+  ipvt
+
+let band_lu_solve ?(trans = false) ~ml ~mu abd ipvt b =
+  let n = band "Linpack.band_lu_solve" ml mu abd in
+  rhs "Linpack.band_lu_solve" n b;
+  pivots "Linpack.band_lu_solve" n ipvt;
+  let job = if trans then 1 else 0 in
+  columns b (fun col ->
+      dgbsl (Mat.data abd) (Mat.rows abd) n ml mu ipvt col job)
+
+let band_solve ~ml ~mu abd b =
+  let n = band "Linpack.band_solve" ml mu abd in
+  rhs "Linpack.band_solve" n b;
+  let ipvt = Array.make (max 1 n) 0 in
+  let info = dgbfa (Mat.data abd) (Mat.rows abd) n ml mu ipvt in
+  if info > 0 then raise (Singular info);
+  columns b (fun col -> dgbsl (Mat.data abd) (Mat.rows abd) n ml mu ipvt col 0)
+
+let cholesky a =
+  Mat.square "Linpack.cholesky" a;
+  let n = Mat.rows a in
+  let info = dpofa (Mat.data a) n n in
+  if info > 0 then raise (Not_positive_definite info)
+
+let cholesky_solve a b =
+  Mat.square "Linpack.cholesky_solve" a;
+  Mat.same_rows "Linpack.cholesky_solve" a b;
+  let n = Mat.rows a in
+  columns b (fun col -> dposl (Mat.data a) n n col)
+
+let solve_spd a b =
+  Mat.square "Linpack.solve_spd" a;
+  Mat.same_rows "Linpack.solve_spd" a b;
+  let n = Mat.rows a in
+  let info = dpofa (Mat.data a) n n in
+  if info > 0 then raise (Not_positive_definite info);
+  columns b (fun col -> dposl (Mat.data a) n n col)
+
+let band_cholesky ~mu abd =
+  let n = spd_band "Linpack.band_cholesky" mu abd in
+  let info = dpbfa (Mat.data abd) (Mat.rows abd) n mu in
+  if info > 0 then raise (Not_positive_definite info)
+
+let band_cholesky_solve ~mu abd b =
+  let n = spd_band "Linpack.band_cholesky_solve" mu abd in
+  rhs "Linpack.band_cholesky_solve" n b;
+  columns b (fun col -> dpbsl (Mat.data abd) (Mat.rows abd) n mu col)
+
+let band_solve_spd ~mu abd b =
+  let n = spd_band "Linpack.band_solve_spd" mu abd in
+  rhs "Linpack.band_solve_spd" n b;
+  let info = dpbfa (Mat.data abd) (Mat.rows abd) n mu in
+  if info > 0 then raise (Not_positive_definite info);
+  columns b (fun col -> dpbsl (Mat.data abd) (Mat.rows abd) n mu col)

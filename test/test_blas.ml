@@ -2,6 +2,7 @@
    Level 1 and level 3 checks for BLAS level 1. *)
 
 open Reeve.Blas
+open Reeve.Blas.Raw
 
 let tol = 1.0e-12
 let bad = ref 0
@@ -212,6 +213,89 @@ let l1_drotg_zero () =
   near "drotg 0 c" c 1.0;
   near "drotg 0 s" s 0.0
 
+(* ---- The OCaml surface ---- *)
+
+let raises what f =
+  match f () with
+  | () -> fail what
+  | exception Invalid_argument _ -> ()
+
+let s_axpy () =
+  let x = [| 1.0; 2.0; 3.0 |] and y = [| 10.0; 20.0; 30.0 |] in
+  axpy 2.0 x y;
+  same "axpy" y [| 12.0; 24.0; 36.0 |];
+  same "axpy leaves x" x [| 1.0; 2.0; 3.0 |]
+
+let s_axpy_strided () =
+  let x = [| 1.0; 99.0; 2.0; 99.0 |] and y = [| 10.0; 20.0 |] in
+  axpy ~incx:2 3.0 x y;
+  same "axpy strided" y [| 13.0; 26.0 |]
+
+let s_dot () =
+  exact "dot" (dot [| 1.0; 2.0; 3.0 |] [| 4.0; 5.0; 6.0 |]) 32.0;
+  exact "dot empty" (dot [||] [||]) 0.0;
+  exact "dot strided"
+    (dot ~incy:2 [| 1.0; 2.0 |] [| 3.0; 9.0; 4.0; 9.0 |]) 11.0
+
+let s_nrm2_asum () =
+  exact "nrm2" (nrm2 [| 3.0; 4.0 |]) 5.0;
+  exact "nrm2 empty" (nrm2 [||]) 0.0;
+  exact "nrm2 strided" (nrm2 ~inc:2 [| 3.0; 9.0; 4.0; 9.0 |]) 5.0;
+  exact "asum" (asum [| 1.0; -2.0; 3.0 |]) 6.0;
+  exact "asum strided" (asum ~inc:3 [| 1.0; 9.0; 9.0; -2.0 |]) 3.0
+
+let s_scal () =
+  let x = [| 1.0; 2.0; 3.0 |] in
+  scal 2.0 x;
+  same "scal" x [| 2.0; 4.0; 6.0 |];
+  let y = [| 1.0; 2.0; 3.0; 4.0 |] in
+  scal ~inc:2 (-1.0) y;
+  same "scal strided" y [| -1.0; 2.0; -3.0; 4.0 |]
+
+let s_copy_swap () =
+  let x = [| 1.0; 2.0 |] and y = [| 8.0; 9.0 |] in
+  copy x y;
+  same "copy" y [| 1.0; 2.0 |];
+  let a = [| 1.0; 2.0 |] and b = [| 3.0; 4.0 |] in
+  swap a b;
+  same "swap a" a [| 3.0; 4.0 |];
+  same "swap b" b [| 1.0; 2.0 |]
+
+let s_rot_rotg () =
+  let (r, _, c, s) = rotg 3.0 4.0 in
+  near "rotg r" r 5.0;
+  let x = [| 3.0 |] and y = [| 4.0 |] in
+  rot x y c s;
+  near "rot x" x.(0) 5.0;
+  near "rot y" y.(0) 0.0
+
+let s_iamax () =
+  check "iamax" (iamax [| 1.0; -5.0; 3.0; 5.0 |] = 1);
+  check "iamax single" (iamax [| -1.0 |] = 0);
+  check "iamax strided" (iamax ~inc:2 [| 1.0; 99.0; -7.0; 99.0 |] = 1)
+
+let s_conformance () =
+  raises "axpy length" (fun () -> axpy 1.0 [| 1.0 |] [| 1.0; 2.0 |]);
+  raises "dot length" (fun () -> ignore (dot [| 1.0 |] [| 1.0; 2.0 |]));
+  raises "copy length" (fun () -> copy [| 1.0; 2.0 |] [| 1.0 |]);
+  raises "swap length" (fun () -> swap [| 1.0; 2.0 |] [| 1.0 |]);
+  raises "rot length" (fun () -> rot [| 1.0 |] [| 1.0; 2.0 |] 1.0 0.0);
+  raises "axpy stride mismatch"
+    (fun () -> axpy ~incx:2 1.0 [| 1.0; 2.0; 3.0; 4.0 |] [| 1.0 |]);
+  raises "zero increment" (fun () -> ignore (nrm2 ~inc:0 [| 1.0 |]));
+  raises "negative increment" (fun () -> ignore (asum ~inc:(-1) [| 1.0 |]));
+  raises "scal zero increment" (fun () -> scal ~inc:0 2.0 [| 1.0 |]);
+  raises "iamax empty" (fun () -> ignore (iamax [||]))
+
+let s_empty_is_quiet () =
+  let x = [||] and y = [||] in
+  axpy 1.0 x y;
+  scal 2.0 x;
+  copy x y;
+  swap x y;
+  rot x y 0.6 0.8;
+  check "empty surface calls are quiet" (Array.length x = 0)
+
 let () =
   l3_daxpy ();
   l3_drotg ();
@@ -243,5 +327,15 @@ let () =
   l1_idamax_strided_offset ();
   l1_empty ();
   l1_drotg_zero ();
+  s_axpy ();
+  s_axpy_strided ();
+  s_dot ();
+  s_nrm2_asum ();
+  s_scal ();
+  s_copy_swap ();
+  s_rot_rotg ();
+  s_iamax ();
+  s_conformance ();
+  s_empty_is_quiet ();
   if !bad = 0 then print_string "blas: all checks passed\n"
   else exit 1

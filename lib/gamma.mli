@@ -5,6 +5,62 @@
    hypergeometric function U, and the Wigner 3j and 6j coefficients, ported
    from the SLATEC double precision routines. *)
 
+module Raw : sig
+  (** The Fortran shapes of the four routines that fill an array you pass them,
+      argument for argument. These are what the differential in [diff/]
+      compares against the reference Fortran. The rest of the module is already
+      the shape an OCaml caller wants, so it isn't repeated here. *)
+
+  val dpsifn : float -> int -> int -> int -> float array -> int
+  (** [dpsifn x n kode m ans] fills [ans.(0) .. ans.(m-1)] with the scaled
+      derivatives ((-1)^(k+1)/Gamma(k+1)) psi(k,x) for k = n .. n+m-1, except
+      that for [kode = 2] and [n = 0] the first component is -psi(x) + log x
+      instead of -psi(x), and returns the number of trailing components set to
+      zero by underflow. Needs [x] > 0, [n] >= 0, [m] >= 1, [kode] either 1 or
+      2 and [ans] at least [m] long; raises [Invalid_argument] otherwise, and
+      when [x] is too small or [n+m-1] too large for the result to be
+      representable. *)
+
+  val drc3jj :
+    float -> float -> float -> float -> float array -> int -> float * float
+  (** [drc3jj l2 l3 m2 m3 thrcof ndim] fills [thrcof] with the Wigner 3j symbols
+      (l1 l2 l3 / -m2-m3 m2 m3) for l1 running over its allowed values in unit
+      steps, and returns the pair (l1min, l1max) of those limits, so that
+      [thrcof.(0)] is the symbol at l1min and l1max - l1min + 1 components are
+      set. Needs [ndim] at least that many, [ndim] no more than the length of
+      [thrcof], l2 >= |m2| and l3 >= |m3| with l2+|m2| and l3+|m3| integral;
+      raises [Invalid_argument] otherwise. *)
+
+  val drc3jm :
+    float -> float -> float -> float -> float array -> int -> float * float
+  (** [drc3jm l1 l2 l3 m1 thrcof ndim] fills [thrcof] with the Wigner 3j symbols
+      (l1 l2 l3 / m1 m2 -m1-m2) for m2 running over its allowed values in unit
+      steps, and returns the pair (m2min, m2max) of those limits, so that
+      [thrcof.(0)] is the symbol at m2min and m2max - m2min + 1 components are
+      set. Needs [ndim] at least that many, [ndim] no more than the length of
+      [thrcof], l1 >= |m1| with l1+|m1| integral, l1, l2 and l3 triangular and
+      l1+l2+l3 integral; raises [Invalid_argument] otherwise. *)
+
+  val drc6j :
+    float ->
+    float ->
+    float ->
+    float ->
+    float ->
+    float array ->
+    int ->
+    float * float
+  (** [drc6j l2 l3 l4 l5 l6 sixcof ndim] fills [sixcof] with the Wigner 6j
+      symbols (l1 l2 l3 / l4 l5 l6) for l1 running over its allowed values in
+      unit steps, and returns the pair (l1min, l1max) of those limits, so that
+      [sixcof.(0)] is the symbol at l1min and l1max - l1min + 1 components are
+      set. Needs [ndim] at least that many, [ndim] no more than the length of
+      [sixcof], the triads (l4,l2,l6) and (l4,l5,l3) triangular and l2+l3+l5+l6
+      and l4+l2+l6 integral; raises [Invalid_argument] otherwise. *)
+end
+
+(* ---- The OCaml surface ---- *)
+
 val dgamlm : unit -> float * float
 (** [dgamlm ()] is the pair (xmin, xmax) bounding the argument of the Gamma
     function, xmin the smallest value below which Gamma underflows and xmax the
@@ -108,15 +164,14 @@ val dpsixn : int -> float
     and from the asymptotic expansion above that. Raises [Invalid_argument] for
     [n] < 1. *)
 
-val dpsifn : float -> int -> int -> int -> float array -> int
-(** [dpsifn x n kode m ans] fills [ans.(0) .. ans.(m-1)] with the scaled
-    derivatives ((-1)^(k+1)/Gamma(k+1)) psi(k,x) for k = n .. n+m-1, except
-    that for [kode = 2] and [n = 0] the first component is -psi(x) + log x
-    instead of -psi(x), and returns the number of trailing components set to
-    zero by underflow. Needs [x] > 0, [n] >= 0, [m] >= 1, [kode] either 1 or 2
-    and [ans] at least [m] long; raises [Invalid_argument] otherwise, and when
-    [x] is too small or [n+m-1] too large for the result to be
-    representable. *)
+val dpsifn : ?scaled:bool -> float -> int -> int -> float array * int
+(** [dpsifn x n m] is the [m] long sequence of scaled derivatives
+    ((-1)^(k+1)/Gamma(k+1)) psi(k,x) for k = n .. n+m-1, paired with the number
+    of components at the end of it that underflowed to zero instead of being
+    computed. With [~scaled:true] and [n = 0] the first component comes back as
+    -psi(x) + log x rather than -psi(x). Needs [x] > 0, [n] >= 0 and [m] >= 1;
+    raises [Invalid_argument] otherwise, and when [x] is too small or [n+m-1]
+    too large for the result to be representable. *)
 
 val dchu : float -> float -> float -> float
 (** [dchu a b x] is Kummer's confluent hypergeometric function U(a,b,x) of the
@@ -130,39 +185,28 @@ val d9chu : float -> float -> float -> float
     Raises [Invalid_argument] if the fraction fails to converge in 300
     terms. *)
 
-val drc3jj :
-  float -> float -> float -> float -> float array -> int -> float * float
-(** [drc3jj l2 l3 m2 m3 thrcof ndim] fills [thrcof] with the Wigner 3j symbols
-    (l1 l2 l3 / -m2-m3 m2 m3) for l1 running over its allowed values in unit
-    steps, and returns the pair (l1min, l1max) of those limits, so that
-    [thrcof.(0)] is the symbol at l1min and l1max - l1min + 1 components are
-    set. Needs [ndim] at least that many, [ndim] no more than the length of
-    [thrcof], l2 >= |m2| and l3 >= |m3| with l2+|m2| and l3+|m3| integral;
-    raises [Invalid_argument] otherwise. *)
+val drc3jj : float -> float -> float -> float -> float array * float * float
+(** [drc3jj l2 l3 m2 m3] is the triple (coefficients, l1min, l1max): the Wigner
+    3j symbols (l1 l2 l3 / -m2-m3 m2 m3) for l1 running from l1min to l1max in
+    unit steps, so the array is l1max - l1min + 1 long and its first element is
+    the symbol at l1min. Needs l2 >= |m2| and l3 >= |m3| with l2+|m2| and
+    l3+|m3| integral; raises [Invalid_argument] otherwise, and if the run of
+    coefficients is too long to allocate. *)
 
-val drc3jm :
-  float -> float -> float -> float -> float array -> int -> float * float
-(** [drc3jm l1 l2 l3 m1 thrcof ndim] fills [thrcof] with the Wigner 3j symbols
-    (l1 l2 l3 / m1 m2 -m1-m2) for m2 running over its allowed values in unit
-    steps, and returns the pair (m2min, m2max) of those limits, so that
-    [thrcof.(0)] is the symbol at m2min and m2max - m2min + 1 components are
-    set. Needs [ndim] at least that many, [ndim] no more than the length of
-    [thrcof], l1 >= |m1| with l1+|m1| integral, l1, l2 and l3 triangular and
-    l1+l2+l3 integral; raises [Invalid_argument] otherwise. *)
+val drc3jm : float -> float -> float -> float -> float array * float * float
+(** [drc3jm l1 l2 l3 m1] is the triple (coefficients, m2min, m2max): the Wigner
+    3j symbols (l1 l2 l3 / m1 m2 -m1-m2) for m2 running from m2min to m2max in
+    unit steps, so the array is m2max - m2min + 1 long and its first element is
+    the symbol at m2min. Needs l1 >= |m1| with l1+|m1| integral, l1, l2 and l3
+    triangular and l1+l2+l3 integral; raises [Invalid_argument] otherwise, and
+    if the run of coefficients is too long to allocate. *)
 
 val drc6j :
-  float ->
-  float ->
-  float ->
-  float ->
-  float ->
-  float array ->
-  int ->
-  float * float
-(** [drc6j l2 l3 l4 l5 l6 sixcof ndim] fills [sixcof] with the Wigner 6j
-    symbols (l1 l2 l3 / l4 l5 l6) for l1 running over its allowed values in
-    unit steps, and returns the pair (l1min, l1max) of those limits, so that
-    [sixcof.(0)] is the symbol at l1min and l1max - l1min + 1 components are
-    set. Needs [ndim] at least that many, [ndim] no more than the length of
-    [sixcof], the triads (l4,l2,l6) and (l4,l5,l3) triangular and l2+l3+l5+l6
-    and l4+l2+l6 integral; raises [Invalid_argument] otherwise. *)
+  float -> float -> float -> float -> float -> float array * float * float
+(** [drc6j l2 l3 l4 l5 l6] is the triple (coefficients, l1min, l1max): the
+    Wigner 6j symbols (l1 l2 l3 / l4 l5 l6) for l1 running from l1min to l1max
+    in unit steps, so the array is l1max - l1min + 1 long and its first element
+    is the symbol at l1min. Needs the triads (l4,l2,l6) and (l4,l5,l3)
+    triangular and l2+l3+l5+l6 and l4+l2+l6 integral; raises
+    [Invalid_argument] otherwise, and if the run of coefficients is too long to
+    allocate. *)

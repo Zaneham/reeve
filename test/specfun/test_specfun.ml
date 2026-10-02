@@ -152,6 +152,44 @@ let l1_domains () =
   raises "drf uplim raises" (fun () -> drf 0.0 1.0 Float.max_float);
   raises "drd uplim raises" (fun () -> drd 0.0 1.0 Float.max_float)
 
+(* ---- The Fortran shapes ---- *)
+
+let raw_dcsevl () =
+  let cs = [| 0.5; 0.25; -0.125; 0.0625 |] in
+  let t x k = Raw.dcsevl x cs k in
+  List.iter
+    (fun x ->
+      let t0 = 1.0 and t1 = x in
+      let t2 = (2.0 *. x *. x) -. 1.0 in
+      let t3 = (4.0 *. x *. x *. x) -. (3.0 *. x) in
+      near_t "raw dcsevl one term" tol (t x 1) (0.5 *. cs.(0) *. t0);
+      near_t "raw dcsevl two terms" tol (t x 2)
+        ((0.5 *. cs.(0) *. t0) +. (cs.(1) *. t1));
+      near_t "raw dcsevl three terms" tol (t x 3)
+        ((0.5 *. cs.(0) *. t0) +. (cs.(1) *. t1) +. (cs.(2) *. t2));
+      near_t "raw dcsevl four terms" tol (t x 4)
+        ((0.5 *. cs.(0) *. t0) +. (cs.(1) *. t1) +. (cs.(2) *. t2)
+        +. (cs.(3) *. t3)))
+    [ -1.0; -0.75; -0.25; 0.0; 0.3; 0.8; 1.0 ];
+  near "raw dcsevl zero terms" (t 0.5 0) 0.0;
+  raises "raw dcsevl above one raises" (fun () -> ignore (t 1.5 2));
+  raises "raw dcsevl below minus one raises" (fun () -> ignore (t (-1.5) 2))
+
+let raw_dcot () =
+  List.iter
+    (fun x ->
+      rel_t "raw dcot against the libm" 1.0e-13 (Raw.dcot x) (1.0 /. tan x);
+      holds "raw dcot is odd" (Raw.dcot (-.x) = -.Raw.dcot x))
+    [ 0.125; 0.5; 1.0; 1.5; 2.0; 3.0; 4.0; 7.0 ];
+  rel_t "raw dcot at a large argument" 1.0e-9 (Raw.dcot 1000.0)
+    (1.0 /. tan 1000.0);
+  rel_t "raw dcot has period pi" 1.0e-12 (Raw.dcot (0.7 +. pi)) (Raw.dcot 0.7);
+  rel_t "raw dcot double angle" 1.0e-12 (Raw.dcot 1.4)
+    ((Raw.dcot 0.7 -. (1.0 /. Raw.dcot 0.7)) /. 2.0);
+  raises "raw dcot zero raises" (fun () -> ignore (Raw.dcot 0.0));
+  raises "raw dcot huge argument raises" (fun () ->
+      ignore (Raw.dcot 1.0e300))
+
 let () =
   l1_gamma ();
   l1_airy ();
@@ -163,4 +201,6 @@ let () =
   l3_gamma ();
   l3_airy ();
   l3_elliptic ();
+  raw_dcsevl ();
+  raw_dcot ();
   if !bad = 0 then print_string "specfun: all checks passed\n" else exit 1

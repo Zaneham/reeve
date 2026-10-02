@@ -1363,3 +1363,8 @@ let drc x y =
   done;
   if not !converged then invalid_arg "drc: iteration limit reached";
   !res
+
+module Raw = struct
+  let dcsevl = dcsevl
+  let dcot = dcot
+end

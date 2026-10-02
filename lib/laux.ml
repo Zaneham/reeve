@@ -1,8 +1,9 @@
 (* Reeve, Copyright 2026 Zane Hambly.
    The LAPACK auxiliary routines, ported from the reference double precision
-   Fortran. A matrix is a [float array] in column major order with a base
-   offset and an explicit leading dimension, so the element (i, j) zero based
-   lives at ao + i + j * lda. *)
+   Fortran. In the Fortran shapes a matrix is a [float array] in column major
+   order with a base offset and an explicit leading dimension, so the element
+   (i, j) zero based lives at ao + i + j * lda. The OCaml surface at the
+   bottom takes a Mat.t instead and allocates its own workspace. *)
 
 open Mach
 
@@ -528,3 +529,59 @@ let ilaenv ispec name opts n1 n2 n3 n4 =
   else if ispec = 11 then ieeeck 0 0.0 1.0
   else if ispec >= 12 && ispec <= 17 then iparmq ispec name opts n1 n2 n3 n4
   else -1
+
+module Raw = struct
+  let xerbla = xerbla
+  let dlamch = dlamch
+  let dlaisnan = dlaisnan
+  let disnan = disnan
+  let dlapy2 = dlapy2
+  let dlapy3 = dlapy3
+  let dlassq = dlassq
+  let dlaswp = dlaswp
+  let dlaset = dlaset
+  let dlacpy = dlacpy
+  let dlange = dlange
+  let ieeeck = ieeeck
+  let iparmq = iparmq
+  let ilaenv = ilaenv
+end
+
+(* ---- The OCaml surface ---- *)
+
+let lamch = dlamch
+let isnan = disnan
+let lapy2 = dlapy2
+let lapy3 = dlapy3
+
+let swap_rows ?(reverse = false) a ipiv =
+  let rows = Mat.rows a in
+  let k = Array.length ipiv in
+  if k > rows then
+    invalid_arg "Laux.swap_rows: more pivots than the matrix has rows";
+  Array.iter
+    (fun p ->
+      if p < 0 || p >= rows then
+        invalid_arg "Laux.swap_rows: pivot is not a row of the matrix")
+    ipiv;
+  dlaswp (Mat.cols a) (Mat.data a) 0 rows 0 (k - 1) ipiv 0
+    (if reverse then -1 else 1)
+
+let fill ?(part = Full) ?diag a alpha =
+  let beta = match diag with Some b -> b | None -> alpha in
+  dlaset part (Mat.rows a) (Mat.cols a) alpha beta (Mat.data a) 0 (Mat.rows a)
+
+let copy ?(part = Full) src dst =
+  Mat.same_rows "Laux.copy" src dst;
+  if Mat.cols src <> Mat.cols dst then
+    invalid_arg "Laux.copy: operands disagree on the number of columns";
+  dlacpy part (Mat.rows src) (Mat.cols src) (Mat.data src) 0 (Mat.rows src)
+    (Mat.data dst) 0 (Mat.rows dst)
+
+let norm kind a =
+  let work =
+    match kind with
+    | Inf_norm -> Array.make (max 1 (Mat.rows a)) 0.0
+    | Max_abs | One_norm | Frobenius -> [||]
+  in
+  dlange kind (Mat.rows a) (Mat.cols a) (Mat.data a) 0 (Mat.rows a) work
