@@ -1,6 +1,9 @@
 open Blas
 open Blasmat
 open Lapack
+open Lapack.Raw
+open Blas.Raw
+open Blasmat.Raw
 
 let sd = ref 0
 let rseed v = sd := v

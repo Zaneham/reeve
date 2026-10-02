@@ -1,4 +1,5 @@
 open Reeve.Sort
+open Reeve.Sort.Raw
 
 let gen n sel =
   let dx = Array.make (max n 1) 0.0 in

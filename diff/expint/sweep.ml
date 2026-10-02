@@ -123,6 +123,7 @@ let () =
   close_out inp
 
 open Expint
+open Expint.Raw
 
 let p name v = Printf.fprintf out "%s %s\n" name (hex v)
 

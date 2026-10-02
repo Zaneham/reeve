@@ -3,6 +3,7 @@
    work arrays and the error count in the same format drv.f90 uses. *)
 
 open Reeve.Interp
+open Reeve.Interp.Raw
 
 let nw = 136
 
